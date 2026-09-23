@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>CampusCare QR Poster Generator — LPU Emergency Entry Points</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/qr.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/qr.html">
+          <span class="brand-mark">+</span>
+          <span>
+            <span class="brand-name">CampusCare QR Posters</span>
+            <span class="brand-subtitle">Location-Specific Emergency Entry Points</span>
+          </span>
+        </a>
+        <nav class="nav-links no-print">
+          <a href="/index.html">Unified Portal</a>
+          <a href="/sos.html">Student SOS</a>
+          <a href="/dashboard.html">Staff Dashboard</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="poster-header no-print">
+        <div class="eyebrow">Controlled Print Workflow</div>
+        <h1>Generate Official Emergency QR Posters</h1>
+        <p class="subtext">
+          Every QR code contains only a controlled campus location ID and directly launches the student SOS page. It does not expose student private details or hospital administrative credentials.
+        </p>
+
+        <aside class="alert warning" style="margin-top: 18px;">
+          <strong>Print & Lamination Protocol:</strong> Post these QR posters at eye level inside hostel corridors, room doors, athletic fields, computer labs, and common washrooms.
+        </aside>
+
+        <div class="poster-controls">
+          <div>
+            <label for="base-url">Hosted SOS Website URL</label>
+            <input id="base-url" type="url" spellcheck="false" placeholder="http://localhost:8080/sos.html">
+          </div>
+          <div class="button-row" style="margin-top: 0;">
+            <label class="fine-print" style="margin-right: 12px; cursor: pointer;">
+              <input id="include-pending" type="checkbox" checked> Show all registered entries
+            </label>
+            <button id="print" class="button button-danger" type="button">
+              🖨️ Print All Posters
+            </button>
+          </div>
+        </div>
+
+        <p id="poster-message" class="fine-print" style="margin-top: 14px; font-weight: 600; color: var(--navy-2);"></p>
+      </section>
+
+      <section id="poster-grid" class="poster-grid">
+        <!-- Injected by qr.js -->
+      </section>
+    </main>
+
+    <footer class="footer no-print">
+      CampusCare SOS Reference Implementation — LPU University Health Centre.
+    </footer>
+  </body>
+</html>

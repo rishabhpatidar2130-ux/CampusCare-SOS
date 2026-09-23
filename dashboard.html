@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>CampusCare Dispatch Dashboard — LPU Health Centre</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/dashboard.js" defer></script>
+  </head>
+  <body>
+    <div class="notice-bar">
+      Authorized Uni Health Centre Emergency Dispatch Console. Verify patient condition and ambulance availability before dispatching.
+    </div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/dashboard.html">
+          <span class="brand-mark">+</span>
+          <span>
+            <span class="brand-name">CampusCare Dispatch</span>
+            <span class="brand-subtitle">Emergency Coordination Dashboard</span>
+          </span>
+        </a>
+        <nav class="nav-links">
+          <a href="/index.html">Unified Portal</a>
+          <a href="/sos.html">Student SOS</a>
+          <a href="/qr.html">QR Posters</a>
+          <a id="logout" class="hidden" href="#">Sign out</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- LOGIN VIEW -->
+      <section id="login-view" class="card login-card">
+        <div class="eyebrow">Restricted Access</div>
+        <h1>Dispatcher Sign In</h1>
+        <p class="subtext">
+          Use the credential configured for the university health centre desk. This dashboard monitors real-time student emergency geolocation feeds.
+        </p>
+
+        <form id="login-form" style="margin-top: 20px;">
+          <label for="password">Dispatcher Password</label>
+          <input id="password" type="password" autocomplete="current-password" placeholder="Enter password (default: campuscare2026)" required>
+          <p id="login-error" class="fine-print" style="color: var(--red); font-weight: bold; margin-top: 8px;" role="alert"></p>
+          <div class="button-row">
+            <button class="button button-danger" type="submit">Sign In to Dashboard</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- DASHBOARD VIEW -->
+      <section id="dashboard-view" class="hidden">
+        <div class="dashboard-summary">
+          <div>
+            <div class="eyebrow">Live Incident Stream</div>
+            <h1>Emergency Dispatch Queue</h1>
+            <p class="subtext">Incoming requests update in real time via Server-Sent Events (SSE).</p>
+          </div>
+          <div class="stat">
+            <span class="fact-label">Active SOS Alerts</span>
+            <strong id="active-count">0</strong>
+            <span class="fine-print">Pending staff action</span>
+          </div>
+        </div>
+
+        <aside class="alert warning">
+          <strong>Operational Dispatch Protocol:</strong> Clicking “Confirm dispatch” registers an authorized medical staff decision and notifies the university incident log. Always confirm vehicle readiness.
+        </aside>
+
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+          <button id="btn-refresh" class="button button-plain button-small" type="button">
+            🔄 Refresh Queue
+          </button>
+        </div>
+
+        <section id="incident-list" class="incident-list" aria-live="polite">
+          <!-- Injected by dashboard.js -->
+        </section>
+      </section>
+    </main>
+
+    <footer class="footer">
+      CampusCare SOS Dispatch System — Authorized Staff Interface.
+    </footer>
+  </body>
+</html>

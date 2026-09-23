@@ -1,0 +1,12 @@
+{
+  "name": "campuscare-sos",
+  "version": "2.0.0",
+  "description": "CampusCare Emergency SOS & Dispatch System for LPU",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "py": "py server.py"
+  },
+  "keywords": ["emergency", "sos", "dispatch", "healthcare", "geolocation", "lpu"],
+  "license": "MIT"
+}

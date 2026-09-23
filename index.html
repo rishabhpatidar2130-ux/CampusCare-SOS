@@ -1,0 +1,2914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CampusCare SOS — LPU Emergency Healthcare & Hospital Dispatch System</title>
+  <!--
+    MAP SETUP (production/local):
+    1) Request a CARTO Basemap API key: https://carto.com/basemaps/apikey/
+    2) Paste the key using the 'Map provider setup' button, or set localStorage key 'campuscare_carto_basemap_key'.
+    3) Serve this file from localhost, not file://:
+       python -m http.server 8000
+       Then open http://localhost:8000/CampusCare_SOS_Carto_Fixed.html
+  -->
+  <meta name="description" content="CampusCare Emergency SOS Network. Instant geolocation hand-off from students to University Health Centre hospital dispatchers." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#fff1f2',
+              100: '#ffe4e6',
+              500: '#f43f5e',
+              600: '#e11d48',
+              700: '#be123c',
+              800: '#9f1239',
+              900: '#881337',
+              navy: '#0b192c',
+              dark: '#070f1e'
+            }
+          },
+          animation: {
+            'sos-ping': 'sosPing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite',
+            'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+          },
+          keyframes: {
+            sosPing: {
+              '0%': { transform: 'scale(1)', opacity: '0.8' },
+              '70%': { transform: 'scale(1.22)', opacity: '0' },
+              '100%': { transform: 'scale(1.28)', opacity: '0' }
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; color: black !important; }
+      .print-grid { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 12mm !important; }
+      .poster-card { break-inside: avoid; page-break-inside: avoid; border: 2px solid #000 !important; }
+    }
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.35); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
+  </style>
+
+  <!-- Leaflet live-tracking map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3q8G0m9Q2F7fK3m5Q5uGm5GfM6K0=" crossorigin="" />
+  <style>
+    #cc-file-protocol-warning { display:none; }
+    #sos-live-map { width:100%; height:430px; min-height:340px; border-radius:20px; overflow:hidden; }
+    .cc-ambulance-icon,.cc-student-icon { background:transparent; border:0; }
+    .cc-ambulance-emoji { font-size:32px; line-height:40px; filter:drop-shadow(0 3px 4px rgba(0,0,0,.35)); }
+    .cc-student-emoji { font-size:30px; line-height:36px; filter:drop-shadow(0 3px 4px rgba(0,0,0,.35)); }
+    .cc-live-pulse { width:12px; height:12px; border-radius:50%; background:#10b981; box-shadow:0 0 0 0 rgba(16,185,129,.7); animation:ccPulse 1.6s infinite; }
+    @keyframes ccPulse { 70% { box-shadow:0 0 0 10px rgba(16,185,129,0); } 100% { box-shadow:0 0 0 0 rgba(16,185,129,0); } }
+  </style>
+
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen font-sans antialiased transition-colors duration-200">
+
+  <!-- MAP PROVIDER CONFIGURATION
+       CARTO Basemap API key: request one at https://carto.com/basemaps/apikey/
+       You can also paste the key in the Map Setup panel in the app.
+       Never commit a production key to a public repository. -->
+  <script>
+    window.CAMPUSCARE_MAP_CONFIG = {
+      provider: 'carto',
+      cartoBasemapKey: localStorage.getItem('campuscare_carto_basemap_key') || '',
+      tileStyle: 'voyager'
+    };
+
+    function getCartoBasemapKey() {
+      return String(window.CAMPUSCARE_MAP_CONFIG?.cartoBasemapKey || '').trim();
+    }
+
+    function saveCartoBasemapKey() {
+      const input = document.getElementById('carto-api-key-input');
+      const key = String(input?.value || '').trim();
+      if (!key) {
+        showToast('Please paste your CARTO Basemap API key.', 'error');
+        return;
+      }
+      localStorage.setItem('campuscare_carto_basemap_key', key);
+      window.CAMPUSCARE_MAP_CONFIG.cartoBasemapKey = key;
+      showToast('CARTO map key saved. Reloading the live map…', 'success');
+      setTimeout(() => window.location.reload(), 350);
+    }
+
+    function clearCartoBasemapKey() {
+      localStorage.removeItem('campuscare_carto_basemap_key');
+      window.CAMPUSCARE_MAP_CONFIG.cartoBasemapKey = '';
+      const input = document.getElementById('carto-api-key-input');
+      if (input) input.value = '';
+      showToast('CARTO map key removed.', 'success');
+    }
+
+    function openMapSetup() {
+      const modal = document.getElementById('modal-map-setup');
+      const input = document.getElementById('carto-api-key-input');
+      if (input) input.value = getCartoBasemapKey();
+      modal?.classList.remove('hidden');
+    }
+
+    function closeMapSetup() {
+      document.getElementById('modal-map-setup')?.classList.add('hidden');
+    }
+  </script>
+
+  <!-- Local development: serve this file over http://localhost instead of file:// -->
+  <div id="cc-file-protocol-warning" class="no-print bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold text-center">
+    Development mode: this page is opened with <code>file://</code>. Run <code>python -m http.server 8000</code> in this folder and open <code>http://localhost:8000/</code> for reliable map/network requests.
+    <button type="button" onclick="openMapSetup()" class="ml-2 underline font-black">Map API setup</button>
+  </div>
+
+  <div class="no-print max-w-7xl mx-auto px-4 pt-2 text-right">
+    <button type="button" onclick="openMapSetup()" class="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 underline">🗺️ Map provider setup</button>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TOP EMERGENCY NOTIFICATION BAR -->
+  <!-- ================================================================= -->
+  <div class="no-print bg-rose-500/10 border-b border-rose-500/20 px-4 py-2 text-xs font-semibold text-rose-900 dark:text-rose-300 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto w-full flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping"></span>
+        <span><strong>National Emergency Helpline:</strong> Dial <a href="tel:112" class="underline font-black text-rose-600 dark:text-rose-400">112</a> &nbsp;|&nbsp; <strong>Campus Health Desk:</strong> <a href="tel:01824501227" class="underline font-bold">01824-501227</a> (24/7 Rapid Ambulance Response)</span>
+      </div>
+      <div class="hidden sm:flex items-center gap-3 text-[11px]">
+        <span class="text-slate-500 dark:text-slate-400">Server Node: <strong id="connection-status" class="text-emerald-600 dark:text-emerald-400 font-mono">Syncing...</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MAIN APP NAVIGATION HEADER -->
+  <!-- ================================================================= -->
+  <header class="no-print sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 py-3 shadow-sm">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      
+      <!-- BRAND / TITLE -->
+      <div class="flex items-center justify-between w-full md:w-auto">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('student')">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-rose-600/30">
+            ✚
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="font-extrabold text-lg tracking-tight text-slate-900 dark:text-white">CampusCare SOS</h1>
+              <span class="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800 uppercase tracking-wide">
+                LPU Live
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Real-Time Geolocation & Emergency Dispatch Network</p>
+          </div>
+        </div>
+
+        <!-- MOBILE THEME TOGGLE -->
+        <div class="md:hidden flex items-center gap-2">
+          <button onclick="toggleDarkMode()" class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            🌓
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN TABS / ROLE SWITCHER -->
+      <div class="flex flex-wrap items-center justify-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
+        <button id="tab-btn-student" onclick="switchTab('student')" class="px-3.5 py-1.5 rounded-xl transition bg-rose-600 text-white shadow-sm flex items-center gap-1.5">
+          <span>🚨 Student SOS</span>
+        </button>
+
+        <button id="tab-btn-host" onclick="requestHostAccess()" class="hidden px-3.5 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5">
+          <span>🛡️ Host Control</span>
+          <span id="badge-host-bookings" class="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-mono">0</span>
+        </button>
+
+        <button id="tab-btn-hospital" onclick="switchTab('hospital')" class="px-3.5 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5">
+          <span>🏥 Dispatcher Console</span>
+          <span id="badge-active-count" class="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-mono">0</span>
+        </button>
+
+        <button id="tab-btn-qr" onclick="switchTab('qr')" class="px-3 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5">
+          <span>🏷️ QR Poster Studio</span>
+        </button>
+
+        <button id="tab-btn-opd" onclick="switchTab('opd')" class="hidden sm:flex px-3 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white items-center gap-1.5">
+          <span>🎟️ Dispensary OPD</span>
+        </button>
+
+        <button id="tab-btn-roadmap" onclick="switchTab('roadmap')" class="hidden sm:flex px-3 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white items-center gap-1.5">
+          <span>🗺️ Roadmap</span>
+        </button>
+      </div>
+
+      <!-- STATUS TOOLS & THEME -->
+      <div class="hidden md:flex items-center space-x-2">
+        <button onclick="toggleAlertSound()" id="btn-audio-toggle" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition flex items-center gap-1">
+          <span id="audio-icon">🔔</span>
+          <span id="audio-text">Audio Alerts On</span>
+        </button>
+        <button onclick="toggleDarkMode()" class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Toggle Light/Dark Theme">
+          🌓
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CARTO MAP PROVIDER SETUP -->
+  <div id="modal-map-setup" class="hidden fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+    <div class="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div class="p-6 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-black text-slate-900 dark:text-white">🗺️ Map Provider Setup</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">CampusCare uses CARTO Voyager instead of the public OSM tile server.</p>
+          </div>
+          <button type="button" onclick="closeMapSetup()" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500">✕</button>
+        </div>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800">
+          <p class="text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
+            Request a free CARTO Basemap API key, then paste it below. CARTO currently documents a free allowance of 5 million tile requests per calendar month.
+          </p>
+          <a href="https://carto.com/basemaps/apikey/" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 text-xs font-black text-indigo-700 dark:text-indigo-300 underline">Get a CARTO Basemap API key →</a>
+        </div>
+        <div>
+          <label for="carto-api-key-input" class="block text-xs font-black text-slate-700 dark:text-slate-300 mb-1.5">CARTO Basemap API key</label>
+          <input id="carto-api-key-input" type="password" autocomplete="off" placeholder="Paste your CARTO key here" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <p class="text-[10px] text-slate-400 mt-1.5">For a public deployment, restrict the key to your website/origin in the provider dashboard.</p>
+        </div>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" onclick="clearCartoBasemapKey()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold">Clear key</button>
+          <button type="button" onclick="closeMapSetup()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold">Cancel</button>
+          <button type="button" onclick="saveCartoBasemapKey()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black">Save & Reload Map</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MAIN CONTAINER -->
+  <!-- ================================================================= -->
+  <main class="max-w-7xl mx-auto px-4 lg:px-8 py-6 space-y-8">
+
+    <!-- =============================================================== -->
+    <!-- TAB 1: STUDENT EMERGENCY SOS PORTAL -->
+    <!-- =============================================================== -->
+    <section id="panel-student" class="tab-panel space-y-6">
+      
+      <!-- HERO SOS TRIGGER BOX -->
+      <div class="relative bg-gradient-to-br from-slate-900 via-rose-950 to-slate-900 rounded-3xl p-6 lg:p-10 text-white shadow-2xl overflow-hidden border border-rose-800/40">
+        <!-- Glow accents -->
+        <div class="absolute -right-20 -top-20 w-96 h-96 bg-rose-500/15 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -left-20 -bottom-20 w-80 h-80 bg-red-600/15 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+          
+          <!-- LEFT: 1-TAP SOS BUTTON & COPY -->
+          <div class="flex flex-col sm:flex-row items-center gap-8 text-center sm:text-left">
+            <div class="relative">
+              <div class="absolute inset-0 rounded-full bg-rose-600/40 animate-sos-ping pointer-events-none"></div>
+              <button onclick="triggerSOS()" id="btn-main-sos" class="relative z-10 w-40 h-40 lg:w-48 lg:h-48 rounded-full bg-gradient-to-b from-rose-500 via-red-600 to-rose-700 hover:from-rose-400 hover:to-red-500 text-white font-black text-xl lg:text-2xl shadow-2xl flex flex-col items-center justify-center transition active:scale-95 border-4 border-white/20 select-none cursor-pointer">
+                <span class="text-4xl lg:text-5xl mb-1">🚨</span>
+                <span class="tracking-tight">1-TAP SOS</span>
+                <span class="text-[10px] font-semibold tracking-wider text-rose-200 mt-1 uppercase">Sends Live GPS</span>
+              </button>
+            </div>
+
+            <div class="space-y-3 max-w-lg">
+              <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-400/30 text-rose-300 text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse"></span>
+                <span>Direct Hospital Triage Link</span>
+              </div>
+              <h2 class="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white leading-tight">
+                Immediate Campus Medical Assistance
+              </h2>
+              <p class="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Tapping the SOS button immediately captures your phone’s high-precision GPS coordinates, binds your campus zone, and delivers an audible priority alert to the University Health Centre dispatch room.
+              </p>
+              <div class="flex flex-wrap gap-2 pt-1">
+                <a href="tel:112" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg transition inline-flex items-center gap-2 animate-pulse">
+                  <span>🚨 Call 112 Emergency</span>
+                </a>
+                <a href="tel:01824501227" class="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur transition inline-flex items-center gap-1.5">
+                  <span>📞 Campus Desk: 01824-501227</span>
+                </a>
+                <button onclick="openModal('modal-custom-location')" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur transition inline-flex items-center gap-1.5">
+                  <span>📍 Edit Room / Landmark</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: LIVE GEOLOCATION TELEMETRY CARD -->
+          <div class="w-full lg:w-96 bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/15 space-y-3 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10">
+              <span class="font-bold text-white flex items-center gap-1.5">
+                <span>🛰️ GPS Telemetry Status</span>
+              </span>
+              <span id="gps-indicator" class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> GPS Ready
+              </span>
+            </div>
+
+            <div class="space-y-2 text-slate-200">
+              <div class="flex justify-between items-center">
+                <span class="text-slate-400">Campus Zone:</span>
+                <select id="select-campus-location" onchange="onCampusLocationChange()" class="bg-slate-800 text-white text-xs font-semibold rounded-lg px-2.5 py-1 border border-white/20 focus:outline-none max-w-[200px]">
+                  <!-- Injected by JS -->
+                </select>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Exact Coordinates:</span>
+                <span id="telemetry-coords" class="font-mono text-emerald-300 font-bold">31.253600, 75.703700</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Accuracy Radius:</span>
+                <span id="telemetry-accuracy" class="text-slate-200 font-mono">± 4 meters</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Room / Floor:</span>
+                <span id="telemetry-landmark" class="text-white font-medium truncate max-w-[190px]">Ground Floor Main Foyer</span>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+              <button onclick="recalibrateGPS()" class="text-rose-300 hover:text-white font-semibold underline flex items-center gap-1">
+                <span>🔄 Recalibrate Geolocation</span>
+              </button>
+              <span class="text-slate-400 font-mono">HTML5 GeoAPI</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ACTIVE SOS INCIDENT TRACKER (Shows dynamically once SOS triggered) -->
+      <div id="active-tracker-card" class="hidden bg-white dark:bg-slate-900 rounded-3xl p-6 lg:p-8 border-2 border-rose-500 shadow-2xl space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-rose-600 animate-ping"></span>
+              <h3 class="text-xl font-black text-slate-900 dark:text-white">Emergency Alert Dispatched — Response Active</h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Incident ID: <strong id="tracker-id" class="font-mono text-rose-600 dark:text-rose-400">SOS-1234</strong> · Transmitted to University Health Centre Dispatch Desk
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="window.location.href='tel:112'" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow transition flex items-center gap-1.5 animate-pulse">
+              <span>🚨 Call 112 Helpline</span>
+            </button>
+            <button onclick="window.location.href='tel:01824501227'" class="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition">
+              <span>Campus Desk 01824-501227</span>
+            </button>
+            <button onclick="cancelActiveSOS()" class="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold rounded-xl transition">
+              Cancel Alert
+            </button>
+          </div>
+        </div>
+
+        <!-- 4-STAGE TIMELINE TRACKER -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <!-- Step 1 -->
+          <div class="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-emerald-800 dark:text-emerald-300">✓ 1. SOS Broadcasted</span>
+              <span class="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-bold">Done</span>
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">High-accuracy GPS & room details received by hospital server.</p>
+          </div>
+
+          <!-- Step 2 -->
+          <div id="step-ack" class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-amber-800 dark:text-amber-300">⏳ 2. Hospital Acknowledged</span>
+              <span id="step-ack-status" class="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded font-bold">Processing</span>
+            </div>
+            <p id="step-ack-text" class="text-[11px] text-slate-500 dark:text-slate-400">Duty dispatcher reviewing patient coordinates.</p>
+          </div>
+
+          <!-- Step 3 -->
+          <div id="step-dispatch" class="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 opacity-60 space-y-1 transition-all duration-300">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-700 dark:text-slate-300">🚑 3. Ambulance En Route</span>
+              <span id="step-dispatch-badge" class="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-bold">Waiting</span>
+            </div>
+            <p id="step-dispatch-text" class="text-[11px] text-slate-500 dark:text-slate-400">Vehicle assignment & ETA pending.</p>
+          </div>
+
+          <!-- Step 4: ACTIVATED ON-SCENE CARE -->
+          <div id="step-scene" class="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1 transition-all duration-300 cursor-pointer" onclick="activateOnSceneCareManual()" title="Click to view or toggle On-Scene Care">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-700 dark:text-slate-300" id="step-scene-title">🏥 4. On-Scene Care</span>
+              <span id="step-scene-badge" class="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-bold">Pending</span>
+            </div>
+            <p id="step-scene-text" class="text-[11px] text-slate-500 dark:text-slate-400">Paramedic first aid & emergency transfer.</p>
+          </div>
+        </div>
+
+
+
+        <!-- ============================================================= -->
+        <!-- LIVE AMBULANCE TRACKING MAP -->
+        <!-- ============================================================= -->
+        <div id="live-tracking-section" class="bg-slate-50 dark:bg-slate-800/40 rounded-3xl p-4 lg:p-5 border border-slate-200 dark:border-slate-700 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xl">🚑</span>
+                <h3 class="font-black text-slate-900 dark:text-white">Live Ambulance Tracking</h3>
+                <span id="ambulance-live-status" class="px-2 py-1 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">● WAITING</span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Live vehicle telemetry is received without reloading the map.</p>
+            </div>
+            <div class="text-right text-xs">
+              <div class="text-slate-400">Assigned Vehicle</div>
+              <div id="ambulance-id" class="font-bold text-slate-900 dark:text-white">Awaiting dispatch</div>
+            </div>
+          </div>
+
+          <div id="sos-live-map" aria-label="Live ambulance tracking map"></div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div class="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] uppercase font-bold text-slate-400">Ambulance GPS</div>
+              <div id="ambulance-coordinates" class="font-mono font-bold mt-1">Waiting...</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] uppercase font-bold text-slate-400">Distance</div>
+              <div id="ambulance-distance" class="font-mono font-bold mt-1">—</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] uppercase font-bold text-slate-400">Speed</div>
+              <div id="ambulance-speed" class="font-mono font-bold mt-1">—</div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800">
+              <div class="text-[10px] uppercase font-bold text-slate-400">Last Update</div>
+              <div id="ambulance-last-update" class="font-mono font-bold mt-1">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTIVE ON-SCENE CARE DETAIL PANEL -->
+        <div id="on-scene-detail-panel" class="hidden p-5 lg:p-6 rounded-3xl bg-emerald-500/10 border-2 border-emerald-500 dark:border-emerald-400 space-y-4 shadow-xl ring-2 ring-emerald-500/20">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-500/30">
+            <div class="flex items-center gap-3">
+              <div class="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-2xl shadow-lg shadow-emerald-600/30">
+                🏥
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-base font-black text-slate-900 dark:text-white">Paramedics On-Scene — Active Emergency Care</h4>
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">● Active Care</span>
+                </div>
+                <p class="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                  Lead Medic: <strong class="text-emerald-700 dark:text-emerald-300 font-bold" id="on-scene-medic-name">Dr. Sandeep & Trauma Response Crew 1</strong> · Rapid stabilization initiated
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="completeIncidentTransfer()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md transition flex items-center gap-1.5">
+                <span>✓ Complete Ward Transfer</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- LIVE PATIENT VITALS TELEMETRY STRIP -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 shadow-sm text-center">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Heart Rate</span>
+              <div class="text-2xl font-black text-rose-600 font-mono mt-0.5 flex items-center justify-center gap-1">
+                <span class="animate-pulse">❤️</span> <span id="vitals-hr">78</span> <span class="text-xs font-normal text-slate-400">bpm</span>
+              </div>
+              <span class="text-[10px] text-emerald-600 font-bold">Stable Rhythm</span>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 shadow-sm text-center">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Blood Oxygen (SpO2)</span>
+              <div class="text-2xl font-black text-cyan-600 font-mono mt-0.5 flex items-center justify-center gap-1">
+                <span>🫁</span> <span id="vitals-spo2">98</span><span class="text-xs font-normal text-slate-400">%</span>
+              </div>
+              <span class="text-[10px] text-emerald-600 font-bold">Optimal Oxygenation</span>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 shadow-sm text-center">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Blood Pressure</span>
+              <div class="text-2xl font-black text-indigo-600 font-mono mt-0.5 flex items-center justify-center gap-1">
+                <span>🩺</span> <span id="vitals-bp">120/80</span>
+              </div>
+              <span class="text-[10px] text-emerald-600 font-bold">Normotensive</span>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 shadow-sm text-center">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Triage Status</span>
+              <div class="text-base font-black text-emerald-600 font-mono mt-1.5 flex items-center justify-center gap-1">
+                <span>🛡️</span> <span>Stabilized</span>
+              </div>
+              <span class="text-[10px] text-slate-500">Stretcher En Route to Bay</span>
+            </div>
+          </div>
+
+          <!-- ON-SCENE PROTOCOL CHECKLIST -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold flex items-center justify-center text-xs">✓</span>
+              <div>
+                <p class="font-bold text-slate-900 dark:text-white leading-tight">Patient Contact Verified</p>
+                <p class="text-[10px] text-slate-500">Medics on site at requested room/floor</p>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold flex items-center justify-center text-xs">✓</span>
+              <div>
+                <p class="font-bold text-slate-900 dark:text-white leading-tight">Airway & First Aid Administered</p>
+                <p class="text-[10px] text-slate-500">Emergency stabilization kit utilized</p>
+              </div>
+            </div>
+
+            <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2.5">
+              <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold flex items-center justify-center text-xs animate-pulse">●</span>
+              <div>
+                <p class="font-bold text-slate-900 dark:text-white leading-tight">Hospital Ward Hand-off</p>
+                <p class="text-[10px] text-emerald-600 font-semibold">Stretcher ambulance transfer active</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">ℹ️</span>
+            <span>Stay in a visible area if safe to do so. Our medical team is actively attending to your location.</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="activateOnSceneCareManual()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1">
+              <span>🏥 Toggle On-Scene Care</span>
+            </button>
+            <button onclick="switchTab('hospital')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition">
+              View on Dispatcher Screen →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECONDARY CONTROLS: QUICK TRIAGE SYMPTOM CHIPS & CONTACT INFO -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- FAST TRIAGE CHIPS -->
+        <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+              <span>🩺 Emergency Triage Priority (Optional)</span>
+            </h4>
+            <span class="text-[11px] font-semibold text-rose-600 dark:text-rose-400" id="current-urgency-badge">Critical Priority</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Selecting a triage category immediately informs our hospital paramedics what medical equipment to carry:
+          </p>
+
+          <div class="grid grid-cols-2 gap-2.5 text-xs" id="triage-chips-container">
+            <button onclick="selectTriage(this, 'Severe Chest Pain / Breathing Issue', 'critical')" class="triage-chip p-3 rounded-2xl border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-bold text-left transition flex flex-col justify-between shadow-sm">
+              <span>💔 Chest Pain / Oxygen</span>
+              <span class="text-[10px] text-rose-600 dark:text-rose-400 font-medium mt-1">Critical</span>
+            </button>
+            <button onclick="selectTriage(this, 'Fracture / Trauma / Heavy Bleeding', 'high')" class="triage-chip p-3 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-amber-500 text-slate-800 dark:text-slate-200 font-semibold text-left transition flex flex-col justify-between">
+              <span>🩹 Trauma / Fracture</span>
+              <span class="text-[10px] text-amber-600 font-medium mt-1">High</span>
+            </button>
+            <button onclick="selectTriage(this, 'Fainting / Unconsciousness', 'critical')" class="triage-chip p-3 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-rose-500 text-slate-800 dark:text-slate-200 font-semibold text-left transition flex flex-col justify-between">
+              <span>😵 Unconscious / Seizure</span>
+              <span class="text-[10px] text-rose-600 font-medium mt-1">Critical</span>
+            </button>
+            <button onclick="selectTriage(this, 'Severe Allergic Reaction / Anaphylaxis', 'high')" class="triage-chip p-3 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-slate-800 dark:text-slate-200 font-semibold text-left transition flex flex-col justify-between">
+              <span>🌾 Severe Allergy / Rash</span>
+              <span class="text-[10px] text-indigo-600 font-medium mt-1">High</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CONTACT DETAILS & LOCATION OVERRIDES -->
+        <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+              <span>📱 Student Callback Phone & Landmarks</span>
+            </h4>
+            <span class="text-[11px] text-slate-400">Optional</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Provide a callback number so responding medics can call your device while navigating to the location:
+          </p>
+
+          <div class="space-y-3 text-xs">
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Callback Phone Number:</label>
+              <input id="input-phone" type="tel" value="+91 98765-43210" placeholder="+91 9XXXXXXXXX" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Room / Floor / Landmark:</label>
+              <input id="input-landmark" type="text" value="Ground Floor Main Lobby near reception" placeholder="e.g. Room 304, 3rd Floor, near water dispenser" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none" />
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- LIVE ON-SCREEN PATIENT CARE & FIRST-AID INSTRUCTION PANEL -->
+      <!-- ============================================================= -->
+      <div id="patient-care-guide-panel" class="bg-white dark:bg-slate-900 rounded-3xl p-6 lg:p-8 border-2 border-rose-500/40 dark:border-rose-600/40 shadow-xl space-y-6">
+        
+        <!-- SECTION TITLE & HOTLINE BANNER -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-rose-600 animate-ping"></span>
+              <h3 class="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <span>🩺 Live On-Screen Patient Care & First-Aid Instructions</span>
+              </h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Critical immediate actions for students, roommates, and campus bystanders while hospital responders are en route.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-slate-400 hidden md:inline">Emergency Hotlines:</span>
+            <a href="tel:112" class="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow transition flex items-center gap-1.5 animate-pulse">
+              <span>🚨 Call 112</span>
+            </a>
+            <a href="tel:01824501227" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-bold transition">
+              <span>01824-501227</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- MEDICAL PROBLEM SELECTOR TABS -->
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Select or Auto-Linked Medical Emergency:</label>
+          <div class="flex flex-wrap gap-1.5" id="patient-guide-tabs">
+            <button onclick="switchPatientGuide('chest-pain')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white shadow-sm transition" data-condition="chest-pain">
+              💔 Chest Pain & Cardiac
+            </button>
+            <button onclick="switchPatientGuide('trauma-bleeding')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="trauma-bleeding">
+              🩹 Bleeding & Fractures
+            </button>
+            <button onclick="switchPatientGuide('unconscious-seizure')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="unconscious-seizure">
+              😵 Unconscious & Seizure
+            </button>
+            <button onclick="switchPatientGuide('allergy-anaphylaxis')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="allergy-anaphylaxis">
+              🌾 Severe Anaphylaxis
+            </button>
+            <button onclick="switchPatientGuide('choking')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="choking">
+              🫁 Choking (Heimlich)
+            </button>
+            <button onclick="switchPatientGuide('heatstroke')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="heatstroke">
+              ☀️ Heatstroke & Fainting
+            </button>
+            <button onclick="switchPatientGuide('burns')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="burns">
+              🔥 Burns & Lab Chemicals
+            </button>
+            <button onclick="switchPatientGuide('electric-shock')" class="patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition" data-condition="electric-shock">
+              ⚡ Electric Shock Trauma
+            </button>
+          </div>
+        </div>
+
+        <!-- DYNAMIC GUIDE CONTENT CONTAINER -->
+        <div id="patient-guide-content" class="space-y-4">
+          <!-- Injected dynamically by switchPatientGuide() -->
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- TAB 2: HOSPITAL STAFF & AMBULANCE DISPATCH COMMAND CENTER -->
+    <!-- =============================================================== -->
+    <section id="panel-hospital" class="tab-panel hidden space-y-6">
+      
+      <!-- STATS BAR -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Active SOS Alerts</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span id="stat-active-incidents" class="text-3xl font-black text-rose-600 dark:text-rose-500">2</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold animate-pulse">Live</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Ambulance Fleet Status</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span class="text-3xl font-black text-emerald-600 dark:text-emerald-400">4 / 4</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold">Available</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Avg Campus Response Time</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span class="text-3xl font-black text-indigo-600 dark:text-indigo-400">3.4 min</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-semibold">Fast Target</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Dispatcher Controls</span>
+          <div class="flex items-center justify-between mt-2">
+            <button onclick="simulateIncomingSOS()" class="w-full px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow transition flex items-center justify-center gap-1.5">
+              <span>+ Simulate Incoming SOS</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DISPATCHER ACTIVE QUEUE TABLE / CARDS -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="p-5 lg:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-600 animate-pulse"></span>
+              <h3 class="font-black text-lg text-slate-900 dark:text-white">Emergency Dispatch Queue</h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Authorized Uni Health Centre dispatchers must acknowledge and manually confirm vehicle response assignments.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="switchTab('host')" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold transition">Manage Fleet & Bookings →</button>
+            <button onclick="refreshIncidents()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition flex items-center gap-1">
+              <span>🔄 Refresh Feed</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- INCIDENTS CONTAINER -->
+        <div id="incidents-container" class="divide-y divide-slate-100 dark:divide-slate-800">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- HOST SIDE: AMBULANCE FLEET, DEPARTURES & ALL BOOKINGS -->
+    <!-- =============================================================== -->
+    <section id="panel-host" class="tab-panel hidden space-y-6">
+
+      <div class="relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 rounded-3xl p-6 lg:p-8 text-white shadow-2xl border border-indigo-800/40">
+        <div class="absolute -right-16 -top-20 w-80 h-80 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div>
+            <span class="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-300">Authorized Operations</span>
+            <h2 class="text-2xl lg:text-3xl font-black mt-1">Host Control Center</h2>
+            <p class="text-xs text-slate-300 mt-2 max-w-2xl">
+              Manage ambulance records, departure schedules and every booking from one operational screen.
+              This prototype stores host-side changes locally until a backend is connected.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="openAmbulanceModal()" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black shadow-lg transition">＋ Add Ambulance</button>
+            <button onclick="seedHostDemoData(true)" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-bold transition">↻ Refresh Demo Data</button>
+            <button onclick="hostLogout()" class="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-300/20 text-white text-xs font-bold transition">Logout</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HOST KPI CARDS -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Fleet Size</span>
+          <div id="host-stat-fleet" class="text-3xl font-black text-slate-900 dark:text-white mt-2">0</div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Available</span>
+          <div id="host-stat-available" class="text-3xl font-black text-emerald-600 mt-2">0</div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Today's Departures</span>
+          <div id="host-stat-departures" class="text-3xl font-black text-indigo-600 dark:text-indigo-400 mt-2">0</div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">All Bookings</span>
+          <div id="host-stat-bookings" class="text-3xl font-black text-rose-600 mt-2">0</div>
+        </div>
+        <div class="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Pending</span>
+          <div id="host-stat-pending" class="text-3xl font-black text-amber-600 mt-2">0</div>
+        </div>
+      </div>
+
+      <!-- AMBULANCE RECORDS -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="p-5 lg:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-black text-lg text-slate-900 dark:text-white">🚑 Ambulance Records</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Fleet number, driver, type, status and current assignment.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <select id="host-fleet-filter" onchange="renderHostDashboard()" class="p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold">
+              <option value="all">All Statuses</option>
+              <option value="available">Available</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="departed">Departed</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+            <input id="host-fleet-search" oninput="renderHostDashboard()" placeholder="Search ambulance / driver..." class="p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+        </div>
+        <div id="host-ambulance-list" class="divide-y divide-slate-100 dark:divide-slate-800"></div>
+      </div>
+
+      <!-- DEPARTURES -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="p-5 lg:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-black text-lg text-slate-900 dark:text-white">🕒 Ambulance Departures</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Control scheduled departures and mark vehicles as departed or completed.</p>
+          </div>
+          <button onclick="addHostDeparture()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition">＋ Schedule Departure</button>
+        </div>
+        <div id="host-departure-list" class="divide-y divide-slate-100 dark:divide-slate-800"></div>
+      </div>
+
+      <!-- ALL BOOKINGS -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div class="p-5 lg:p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-black text-lg text-slate-900 dark:text-white">📋 All Ambulance Bookings</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Every booking is visible to the host for confirmation, assignment and trip tracking.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <input id="host-booking-search" oninput="renderHostDashboard()" placeholder="Search booking / customer..." class="p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+            <select id="host-booking-filter" onchange="renderHostDashboard()" class="p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold">
+              <option value="all">All Bookings</option>
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="departed">Departed</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs min-w-[980px]">
+            <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
+              <tr>
+                <th class="text-left p-4 font-black">Booking</th>
+                <th class="text-left p-4 font-black">Customer</th>
+                <th class="text-left p-4 font-black">Route</th>
+                <th class="text-left p-4 font-black">Ambulance</th>
+                <th class="text-left p-4 font-black">Date / Time</th>
+                <th class="text-left p-4 font-black">Status</th>
+                <th class="text-right p-4 font-black">Action</th>
+              </tr>
+            </thead>
+            <tbody id="host-booking-table" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- TAB 3: QR POSTER GENERATOR & PRINT STUDIO -->
+    <!-- =============================================================== -->
+    <section id="panel-qr" class="tab-panel hidden space-y-6">
+      
+      <!-- CONTROLS & PRINT BAR -->
+      <div class="no-print bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-xl font-black text-slate-900 dark:text-white">LPU Campus Emergency QR Posters</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Print and laminate these QR posters across all hostels, academic zones, and sports facilities for 1-scan emergency access.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="window.print()" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg transition flex items-center gap-2">
+              <span>🖨️ Print All Posters</span>
+            </button>
+            <button onclick="openModal('modal-add-location')" class="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition flex items-center gap-1">
+              <span>＋ Add Custom Location</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- CONFIGURATION STRIP -->
+        <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div class="w-full sm:w-auto flex items-center gap-2">
+            <label class="font-semibold text-slate-600 dark:text-slate-400">Target SOS URL:</label>
+            <input id="qr-base-url" type="url" value="" oninput="renderQRCards()" class="p-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs w-full sm:w-72 focus:outline-none focus:ring-1 focus:ring-rose-500" />
+            <span class="text-[10px] text-slate-400 max-w-xs">QR opens this webpage first, then loads the scanned campus location.</span>
+          </div>
+
+          <!-- CATEGORY FILTERS -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="filterQRCategory('all')" class="qr-cat-btn px-3 py-1 rounded-lg bg-rose-600 text-white font-semibold" data-cat="all">All (27+)</button>
+            <button onclick="filterQRCategory('residential')" class="qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold" data-cat="residential">Hostels</button>
+            <button onclick="filterQRCategory('academic')" class="qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold" data-cat="academic">Academic</button>
+            <button onclick="filterQRCategory('sports')" class="qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold" data-cat="sports">Sports</button>
+            <button onclick="filterQRCategory('laboratory')" class="qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold" data-cat="laboratory">Labs</button>
+            <button onclick="filterQRCategory('healthcare')" class="qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold" data-cat="healthcare">Health</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QR POSTERS GRID (PRINT READY) -->
+      <div id="qr-posters-grid" class="print-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Injected by JS -->
+      </div>
+
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- TAB 4: CAMPUS DISPENSARY DIGITAL OPD TOKEN QUEUE -->
+    <!-- =============================================================== -->
+    <section id="panel-opd" class="tab-panel hidden space-y-6">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 lg:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Campus Health Centre</span>
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              Digital OPD Clinic Token System
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              For regular illnesses (fever, seasonal allergies, colds, routine checkups). Avoid queuing 40+ minutes at the clinic desk.
+            </p>
+          </div>
+
+          <div>
+            <span class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-xs">
+              ● Clinic Open 8:00 AM – 10:00 PM
+            </span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-center space-y-2">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Active Token</span>
+            <div id="opd-user-token" class="text-4xl font-black text-indigo-600 dark:text-indigo-400 font-mono">#MED-42</div>
+            <p class="text-xs text-slate-500">Estimated wait: <strong class="text-slate-800 dark:text-slate-200">~15 mins</strong></p>
+            <button onclick="generateNewOPDToken()" class="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition">
+              Book Fresh Consultation Slot
+            </button>
+          </div>
+
+          <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-center space-y-2">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Currently In Doctor Cabin</span>
+            <div class="text-4xl font-black text-emerald-600 dark:text-emerald-400 font-mono">#MED-39</div>
+            <p class="text-xs text-slate-500">Cabin 3: <strong class="text-slate-800 dark:text-slate-200">Dr. Sunita (Physician)</strong></p>
+            <div class="text-[11px] text-emerald-600 font-semibold mt-2">Patients ahead of you: 2</div>
+          </div>
+
+          <div class="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-center space-y-2">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Dispensary Pharmacy Queue</span>
+            <div class="text-4xl font-black text-amber-600 dark:text-amber-400 font-mono">#RX-118</div>
+            <p class="text-xs text-slate-500">Counter 1: <strong class="text-slate-800 dark:text-slate-200">Prescription Dispensing</strong></p>
+            <div class="text-[11px] text-slate-400 mt-2">Stock: All Essential Meds Available</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- TAB 5: CAMPUS ROADMAP & ARCHITECTURE -->
+    <!-- =============================================================== -->
+    <section id="panel-roadmap" class="tab-panel hidden space-y-6">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 lg:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+        <div>
+          <span class="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">Implementation Pathway</span>
+          <h3 class="text-2xl font-black text-slate-900 dark:text-white mt-1">
+            Deploying CampusCare Across LPU (Web Prototype to Native App)
+          </h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Standard Operating Procedure and technical rollout blueprint for University Health Centre and Security operations.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+            <span class="w-7 h-7 rounded-xl bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 font-black flex items-center justify-center">1</span>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 1: Web-First Prototype</h4>
+            <p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+              No app download required. Students scan corridor QR stickers and approve GPS access in 1 click. Zero barrier to entry during urgent emergencies.
+            </p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+            <span class="w-7 h-7 rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 font-black flex items-center justify-center">2</span>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 2: Ambulance Tablets</h4>
+            <p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+              Equip all 4 campus ambulances with dedicated touchscreen tablets loaded with the live dispatcher console and turn-by-turn campus GPS routing.
+            </p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+            <span class="w-7 h-7 rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-black flex items-center justify-center">3</span>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 3: Native App & Panic Trigger</h4>
+            <p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+              Triple-press power button hardware panic trigger. Automatic encrypted SMS fallback with GPS coordinates if Wi-Fi or 4G data is offline.
+            </p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+            <span class="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-black flex items-center justify-center">4</span>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 4: Health Records Integration</h4>
+            <p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+              Securely stream vital medical data (blood group, allergies, asthma/diabetic history) to emergency responders as soon as the student triggers the SOS.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: HOST LOGIN / ACCESS CONTROL -->
+  <!-- ================================================================= -->
+  <div id="modal-host-login" class="no-print fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+      <div class="text-center mb-6">
+        <div class="mx-auto w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-3xl shadow-lg">🛡️</div>
+        <h3 class="text-xl font-black text-slate-900 dark:text-white mt-4">Host Control Login</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Authorized host personnel only</p>
+      </div>
+      <form onsubmit="hostLogin(event)" class="space-y-4">
+        <div>
+          <label class="block font-bold text-xs text-slate-700 dark:text-slate-300 mb-1.5">Host User ID</label>
+          <input id="host-login-user" required autocomplete="username" placeholder="Enter User ID" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block font-bold text-xs text-slate-700 dark:text-slate-300 mb-1.5">Password</label>
+          <input id="host-login-password" required type="password" autocomplete="current-password" placeholder="Enter password" class="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <p id="host-login-error" class="hidden text-xs font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 p-3 rounded-xl">Invalid User ID or Password.</p>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeHostLogin()" class="flex-1 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-300 font-bold bg-slate-100 dark:bg-slate-800">Cancel</button>
+          <button type="submit" class="flex-1 px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-lg">Login</button>
+        </div>
+      </form>
+      <div class="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400 text-center">Prototype demo: <span class="font-mono">hostadmin</span> / <span class="font-mono">Campus@2026!</span></div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: HOST AMBULANCE RECORD -->
+  <!-- ================================================================= -->
+  <div id="modal-host-ambulance" class="no-print fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <div>
+          <h3 id="host-ambulance-modal-title" class="text-base font-black text-slate-900 dark:text-white">Add Ambulance</h3>
+          <p class="text-[10px] text-slate-400 mt-0.5">Fleet record used by the host dashboard.</p>
+        </div>
+        <button onclick="closeModal('modal-host-ambulance')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      </div>
+      <form onsubmit="saveHostAmbulance(event)" class="space-y-3">
+        <input type="hidden" id="host-amb-id" />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold mb-1">Vehicle Number</label>
+            <input id="host-amb-number" required placeholder="PB-08-AB-1234" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" />
+          </div>
+          <div>
+            <label class="block font-semibold mb-1">Ambulance Type</label>
+            <select id="host-amb-type" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+              <option>Basic Life Support</option><option>Advanced Life Support</option><option>ICU Ambulance</option><option>Trauma Ambulance</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold mb-1">Driver</label>
+            <input id="host-amb-driver" required placeholder="Driver name" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" />
+          </div>
+          <div>
+            <label class="block font-semibold mb-1">Contact</label>
+            <input id="host-amb-phone" placeholder="+91 9XXXXXXXXX" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800" />
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold mb-1">Status</label>
+          <select id="host-amb-status" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+            <option value="available">Available</option><option value="scheduled">Scheduled</option><option value="departed">Departed</option><option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" onclick="closeModal('modal-host-ambulance')" class="px-4 py-2 rounded-xl text-slate-500 font-semibold">Cancel</button>
+          <button class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">Save Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: DISPATCH VEHICLE (STAFF) -->
+  <!-- ================================================================= -->
+  <div id="modal-dispatch" class="no-print fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+          <span>🚑 Assign Ambulance / Response Team</span>
+        </h3>
+        <button onclick="closeModal('modal-dispatch')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <input type="hidden" id="dispatch-target-incident-id" />
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Response Vehicle / Unit:</label>
+          <select id="dispatch-vehicle" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold text-xs">
+            <option value="Campus Response Ambulance #1 (ICU)">Campus Response Ambulance #1 (ICU Equipment)</option>
+            <option value="Campus Response Ambulance #2 (Trauma)">Campus Response Ambulance #2 (Trauma Team)</option>
+            <option value="Golf Cart Rapid First-Aid Cart 1">Golf Cart Rapid First-Aid Cart 1 (Sports/Walkway)</option>
+            <option value="Hostel Mobile First-Aid Team">Hostel Mobile First-Aid Team (On Foot)</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Estimated Arrival (Mins):</label>
+            <input type="number" id="dispatch-eta" value="3" min="1" max="60" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Lead Paramedic:</label>
+            <input type="text" id="dispatch-paramedic" value="Dr. Sandeep & Team 1" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Operational Dispatch Note:</label>
+          <textarea id="dispatch-note" rows="2" placeholder="e.g. Patient located in room 204. Stretcher team dispatched." class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button onclick="closeModal('modal-dispatch')" class="px-4 py-2 rounded-xl text-slate-500 font-semibold">Cancel</button>
+        <button onclick="confirmAmbulanceDispatch()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow transition">
+          Confirm Dispatch
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: ADD CUSTOM LOCATION FOR QR POSTER -->
+  <!-- ================================================================= -->
+  <div id="modal-add-location" class="no-print fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-base font-black text-slate-900 dark:text-white">Add Custom Campus Location</h3>
+        <button onclick="closeModal('modal-add-location')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      </div>
+
+      <form onsubmit="submitCustomLocation(event)" class="space-y-3">
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Location Name:</label>
+          <input id="new-loc-name" required type="text" placeholder="e.g. Block 36 Computer Lab 304" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Category:</label>
+            <select id="new-loc-cat" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs">
+              <option value="residential">Residential / Hostel</option>
+              <option value="academic">Academic Zone</option>
+              <option value="sports">Sports / Gym</option>
+              <option value="laboratory">Laboratory / Research</option>
+              <option value="amenity">Amenity / Food</option>
+              <option value="healthcare">Healthcare</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Zone Code (Slug):</label>
+            <input id="new-loc-slug" required type="text" placeholder="block-36-lab-304" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-xs" />
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Floor / Landmark Details:</label>
+          <input id="new-loc-landmark" required type="text" placeholder="Floor 3, North Corridor" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <button type="button" onclick="closeModal('modal-add-location')" class="px-4 py-2 rounded-xl text-slate-500 font-semibold">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition">
+            Create QR Poster
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: EDIT CUSTOM LOCATION FOR STUDENT -->
+  <!-- ================================================================= -->
+  <div id="modal-custom-location" class="no-print fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-base font-black text-slate-900 dark:text-white">Refine Specific Room / Floor</h3>
+        <button onclick="closeModal('modal-custom-location')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Specific Room, Floor, or Wing:</label>
+          <input id="modal-input-room" type="text" value="Room 318, 3rd Floor" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nearby Landmark for Responders:</label>
+          <input id="modal-input-landmark" type="text" value="Near North Stairwell and Water Dispenser" class="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs" />
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button onclick="closeModal('modal-custom-location')" class="px-4 py-2 rounded-xl text-slate-500 font-semibold">Cancel</button>
+        <button onclick="saveStudentCustomDetails()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition">
+          Update Location
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="no-print fixed bottom-5 right-5 z-50 max-w-sm bg-slate-900/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 text-xs flex items-center gap-3 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+    <span id="toast-icon" class="text-lg">🚨</span>
+    <span id="toast-msg">Action performed</span>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- ================================================================= -->
+  <!-- APPLICATION LOGIC SCRIPT -->
+  <!-- ================================================================= -->
+  <script>
+    // -----------------------------------------------------------------
+    // STATE & CATALOG
+    // -----------------------------------------------------------------
+    let locations = [];
+    let incidents = [];
+    let activeSOS = null;
+    let selectedSymptom = 'Severe Chest Pain / Breathing Issue';
+    let selectedUrgency = 'critical';
+    let soundEnabled = true;
+    let currentCoords = { lat: 31.253600, lng: 75.703700, accuracy: 4 };
+    let activeQRFilter = 'all';
+
+    // -----------------------------------------------------------------
+    // LIVE AMBULANCE TRACKING STATE
+    // -----------------------------------------------------------------
+    let trackingMap = null;
+    let studentMapMarker = null;
+    let ambulanceMapMarker = null;
+    let ambulanceAnimationFrame = null;
+    let ambulanceSimulationTimer = null;
+    let trackingSocket = null;
+    let lastAmbulancePosition = null;
+
+
+    // -----------------------------------------------------------------
+    // INITIALIZATION
+    // -----------------------------------------------------------------
+    async function initApp() {
+      // 1. Try to load config & locations from API, or fallback to local data
+      try {
+        const res = await fetch('/api/locations');
+        if (res.ok) {
+          const data = await res.json();
+          locations = data.locations;
+          document.getElementById('connection-status').innerText = 'Connected (API Live)';
+        } else {
+          throw new Error();
+        }
+      } catch (e) {
+        // Fallback starter locations catalog for standalone preview
+        locations = [
+          { id: "uni-health-centre", name: "Uni Health Centre", category: "healthcare", landmark: "Near Main Admin Block; 24/7 Desk", verified: true },
+          { id: "campus-medical-dispensary", name: "Campus Medical Dispensary", category: "healthcare", landmark: "Block 5, Ground Floor", verified: true },
+          { id: "uni-mall", name: "Uni Mall", category: "amenity", landmark: "Central Commercial Corridor", verified: true },
+          { id: "central-library", name: "Central Library (Block 34)", category: "academic", landmark: "Ground – 3rd Floor Study Zones", verified: true },
+          { id: "sports-complex", name: "Indoor Sports Stadium", category: "sports", landmark: "Ground Floor, Sports Complex", verified: true },
+          { id: "swimming-pool", name: "Swimming Pool & Aquatic Complex", category: "sports", landmark: "Adjacent to BH-4, Lifeguard Post", verified: true },
+          { id: "bh4-playground", name: "BH4 Playgrounds & Synthetic Track", category: "sports", landmark: "Athletic Field Mast 2", verified: true },
+          { id: "block-30-admissions", name: "Block 30 — Division of Admissions", category: "academic", landmark: "Main Entrance Lobby", verified: true },
+          { id: "block-35-auditorium", name: "Block 35 — Shanti Devi Mittal Auditorium", category: "academic", landmark: "Auditorium Main Foyer", verified: true },
+          { id: "block-36-cs-department", name: "Block 36 — CS Department", category: "academic", landmark: "IT Labs, Floors 1–5", verified: true },
+          { id: "boys-hostel-1", name: "Boys Hostel 1 (BH-1)", category: "residential", landmark: "Warden Office, Ground Floor", verified: true },
+          { id: "boys-hostel-2", name: "Boys Hostel 2 (BH-2)", category: "residential", landmark: "Adjacent to Mess Hall 2", verified: true },
+          { id: "boys-hostel-3", name: "Boys Hostel 3 (BH-3)", category: "residential", landmark: "North Wing Lift Lobby", verified: true },
+          { id: "boys-hostel-4", name: "Boys Hostel 4 (BH-4)", category: "residential", landmark: "Ground Floor Lift Lobby", verified: true },
+          { id: "boys-hostel-5", name: "Boys Hostel 5 (BH-5)", category: "residential", landmark: "East Campus Wing", verified: true },
+          { id: "boys-hostel-6", name: "Boys Hostel 6 (BH-6)", category: "residential", landmark: "South Wing Entry Gate", verified: true },
+          { id: "girls-hostel-1", name: "Girls Hostel 1 (GH-1)", category: "residential", landmark: "Main Reception near Block 36", verified: true },
+          { id: "girls-hostel-2", name: "Girls Hostel 2 (GH-2)", category: "residential", landmark: "Adjacent to Canteen Area", verified: true },
+          { id: "girls-hostel-3", name: "Girls Hostel 3 (GH-3)", category: "residential", landmark: "South Campus Wing Checkpoint", verified: true },
+          { id: "girls-hostel-4", name: "Girls Hostel 4 (GH-4)", category: "residential", landmark: "Central Lobby & Lift Bay", verified: true },
+          { id: "school-of-agriculture-labs", name: "School of Agriculture Labs", category: "laboratory", landmark: "Block 12 & 13 Chemical Hall", verified: true },
+          { id: "chemistry-research-labs", name: "Chemistry Research Labs", category: "laboratory", landmark: "Block 28, 2nd Floor Eye-Wash", verified: true },
+          { id: "campus-mess-hall-4", name: "Campus Mess Hall 4", category: "amenity", landmark: "Central Dining Block", verified: true },
+          { id: "campus-gate-security-post", name: "Campus Gate Security Post", category: "security", landmark: "Main Entrance Checkpost", verified: true },
+          { id: "rooftop-solar-garden", name: "Rooftop Solar Garden", category: "special-area", landmark: "Block 40 Terrace", verified: true },
+          { id: "night-canteen-street-food", name: "Night Canteen / Street Food", category: "amenity", landmark: "Outer Campus Road Food Street", verified: true }
+        ];
+        document.getElementById('connection-status').innerText = 'Connected (Client Simulation)';
+      }
+
+      // Populate Campus Location Select Dropdown
+      populateLocationSelect();
+
+      // QR deep-link: scanning a poster opens THIS CampusCare webpage
+      // and automatically selects the encoded campus location.
+      const urlParams = new URLSearchParams(window.location.search);
+      const locParam = urlParams.get('location');
+      const qrLat = Number(urlParams.get('lat'));
+      const qrLng = Number(urlParams.get('lng'));
+      const qrLandmark = urlParams.get('landmark');
+      let qrLocationLoaded = false;
+
+      if (locParam) {
+        const sel = document.getElementById('select-campus-location');
+        const matchingLoc = locations.find(l => l.id === locParam);
+        if (sel && matchingLoc) {
+          sel.value = locParam;
+          onCampusLocationChange();
+          qrLocationLoaded = true;
+        }
+
+        // If the QR contains coordinates, use them as the scanned location
+        // instead of treating them as the student's current GPS position.
+        if (Number.isFinite(qrLat) && Number.isFinite(qrLng) &&
+            qrLat >= -90 && qrLat <= 90 && qrLng >= -180 && qrLng <= 180) {
+          currentCoords.lat = qrLat;
+          currentCoords.lng = qrLng;
+          currentCoords.accuracy = 0;
+          qrLocationLoaded = true;
+          const coordsText = document.getElementById('telemetry-coords');
+          const accText = document.getElementById('telemetry-accuracy');
+          const indicator = document.getElementById('gps-indicator');
+          if (coordsText) coordsText.innerText = `${qrLat}, ${qrLng}`;
+          if (accText) accText.innerText = 'QR Location Pin';
+          if (indicator) indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> QR Location Locked';
+        }
+
+        if (qrLandmark) {
+          const landmarkEl = document.getElementById('telemetry-landmark');
+          if (landmarkEl) landmarkEl.innerText = qrLandmark;
+        }
+
+        if (qrLocationLoaded) {
+          showToast(`CampusCare opened at ${matchingLoc?.name || 'the scanned location'}`, '📍');
+        }
+      }
+
+      // Initialize the QR target to the actual webpage currently being served.
+      // This fixes the old /sos.html target, which did not exist in this
+      // single-file CampusCare deployment. For production, you can replace
+      // CAMPUSCARE_PUBLIC_URL with your permanent HTTPS website URL.
+      const CAMPUSCARE_PUBLIC_URL = 'https://YOUR-DOMAIN.example/CampusCare_SOS_Carto_Production_Ready.html';
+      const qrBaseInput = document.getElementById('qr-base-url');
+      if (qrBaseInput) {
+        const isWebPage = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        const runtimePageUrl = isWebPage
+          ? `${window.location.origin}${window.location.pathname}`
+          : CAMPUSCARE_PUBLIC_URL;
+        qrBaseInput.value = runtimePageUrl;
+        qrBaseInput.placeholder = 'https://your-domain.com/CampusCare...html';
+      }
+
+      // Load Incidents
+      await refreshIncidents();
+
+      // Calibrate GPS initially
+      recalibrateGPS();
+
+      // Render QR cards
+      renderQRCards();
+
+      // Initialize Live Patient Care Guide
+      switchPatientGuide('chest-pain');
+    }
+
+    function populateLocationSelect() {
+      const select = document.getElementById('select-campus-location');
+      if (!select) return;
+      select.innerHTML = '';
+      locations.forEach(loc => {
+        const opt = document.createElement('option');
+        opt.value = loc.id;
+        opt.textContent = loc.name;
+        select.appendChild(opt);
+      });
+      if (locations.length) {
+        select.value = locations[0].id;
+        onCampusLocationChange();
+      }
+    }
+
+    function onCampusLocationChange() {
+      const select = document.getElementById('select-campus-location');
+      const locId = select ? select.value : '';
+      const loc = locations.find(l => l.id === locId);
+      if (loc) {
+        document.getElementById('telemetry-landmark').innerText = loc.landmark || loc.name;
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // GEOLOCATION ENGINE
+    // -----------------------------------------------------------------
+    function recalibrateGPS() {
+      const indicator = document.getElementById('gps-indicator');
+      const coordsText = document.getElementById('telemetry-coords');
+      const accText = document.getElementById('telemetry-accuracy');
+
+      if ("geolocation" in navigator) {
+        indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> Acquiring GPS...';
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            currentCoords.lat = Number(pos.coords.latitude.toFixed(6));
+            currentCoords.lng = Number(pos.coords.longitude.toFixed(6));
+            currentCoords.accuracy = Math.round(pos.coords.accuracy);
+            coordsText.innerText = `${currentCoords.lat}, ${currentCoords.lng}`;
+            accText.innerText = `± ${currentCoords.accuracy} meters`;
+            indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> High Accuracy Locked';
+            showToast(`GPS Position Calibrated: ${currentCoords.lat}, ${currentCoords.lng}`, "📍");
+          },
+          () => {
+            // Simulated fallback coordinates for LPU campus
+            currentCoords.lat = Number((31.253600 + (Math.random() * 0.0015 - 0.0007)).toFixed(6));
+            currentCoords.lng = Number((75.703700 + (Math.random() * 0.0015 - 0.0007)).toFixed(6));
+            currentCoords.accuracy = 5;
+            coordsText.innerText = `${currentCoords.lat}, ${currentCoords.lng}`;
+            accText.innerText = `± 5 meters (Campus WiFi Triangulation)`;
+            indicator.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> WiFi Triangulation';
+            showToast("Device location calibrated to LPU Campus", "📍");
+          },
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      }
+    }
+
+
+    // -----------------------------------------------------------------
+    // LEAFLET LIVE TRACKING ENGINE
+    // -----------------------------------------------------------------
+    function initializeTrackingMap() {
+      const mapEl = document.getElementById('sos-live-map');
+      if (!mapEl || typeof L === 'undefined') return;
+
+      const lat = Number(currentCoords.lat);
+      const lng = Number(currentCoords.lng);
+
+      if (!trackingMap) {
+        trackingMap = L.map('sos-live-map', { zoomControl: true }).setView([lat, lng], 16);
+        // Production basemap: CARTO Voyager.
+        // The public OSM tile server is intentionally NOT used here.
+        const CARTO_BASEMAP_KEY = getCartoBasemapKey();
+        if (!CARTO_BASEMAP_KEY) {
+          showToast('Map API key required. Open “Map provider setup” and add your CARTO key.', 'error');
+          const setupPane = L.control({ position: 'topright' });
+          setupPane.onAdd = function() {
+            const div = L.DomUtil.create('div');
+            div.style.cssText = 'background:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.2);font:700 12px system-ui;color:#334155;max-width:230px;';
+            div.innerHTML = '🗺️ <strong>CARTO key required</strong><br><span style="font-weight:500">Open Map provider setup to connect the production basemap.</span><br><button type="button" style="margin-top:7px;padding:5px 8px;border-radius:7px;background:#4f46e5;color:#fff;border:0;font-weight:800;cursor:pointer">Configure map</button>';
+            div.querySelector('button').onclick = openMapSetup;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+          };
+          setupPane.addTo(trackingMap);
+        } else {
+          const cartoTileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=' + encodeURIComponent(CARTO_BASEMAP_KEY);
+          L.tileLayer(cartoTileUrl, {
+            subdomains: 'abcd',
+            maxZoom: 20,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>'
+          }).addTo(trackingMap);
+        }
+
+        const studentIcon = L.divIcon({
+          className: 'cc-student-icon',
+          html: '<div class="cc-student-emoji">📍</div>',
+          iconSize: [36, 36],
+          iconAnchor: [18, 36]
+        });
+
+        const ambulanceIcon = L.divIcon({
+          className: 'cc-ambulance-icon',
+          html: '<div class="cc-ambulance-emoji">🚑</div>',
+          iconSize: [40, 40],
+          iconAnchor: [20, 20]
+        });
+
+        studentMapMarker = L.marker([lat, lng], { icon: studentIcon, zIndexOffset: 500 })
+          .addTo(trackingMap)
+          .bindPopup('<strong>🚨 SOS Location</strong><br>Student emergency location');
+
+        ambulanceMapMarker = L.marker([lat, lng], { icon: ambulanceIcon, zIndexOffset: 1000 })
+          .addTo(trackingMap)
+          .bindPopup('<strong>🚑 Ambulance</strong><br>Response vehicle');
+
+        ambulanceMapMarker.setOpacity(0);
+      } else {
+        studentMapMarker.setLatLng([lat, lng]);
+        trackingMap.setView([lat, lng]);
+      }
+
+      setTimeout(() => trackingMap.invalidateSize(), 100);
+    }
+
+    function setTrackingStatus(status, text) {
+      const el = document.getElementById('ambulance-live-status');
+      if (!el) return;
+      el.innerText = text || status.toUpperCase();
+      const live = status === 'live';
+      const arrived = status === 'arrived';
+      el.className = live
+        ? 'px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center gap-1'
+        : arrived
+          ? 'px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold'
+          : 'px-2 py-1 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold';
+      if (live) el.innerHTML = '<span class="cc-live-pulse"></span> LIVE';
+    }
+
+    function calculateTrackingDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function updateAmbulanceTracking(data) {
+      if (!trackingMap || !ambulanceMapMarker) initializeTrackingMap();
+      if (!ambulanceMapMarker) return;
+
+      const lat = Number(data.latitude);
+      const lng = Number(data.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const destination = L.latLng(lat, lng);
+      const start = ambulanceMapMarker.getLatLng();
+      const duration = Math.min(1800, Math.max(500, Number(data.animationMs) || 1000));
+
+      ambulanceMapMarker.setOpacity(1);
+      setTrackingStatus('live');
+
+      if (ambulanceAnimationFrame) cancelAnimationFrame(ambulanceAnimationFrame);
+      const startedAt = performance.now();
+
+      function frame(now) {
+        const progress = Math.min((now - startedAt) / duration, 1);
+        const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        ambulanceMapMarker.setLatLng([
+          start.lat + (destination.lat - start.lat) * eased,
+          start.lng + (destination.lng - start.lng) * eased
+        ]);
+        if (progress < 1) ambulanceAnimationFrame = requestAnimationFrame(frame);
+      }
+      ambulanceAnimationFrame = requestAnimationFrame(frame);
+
+      lastAmbulancePosition = { lat, lng };
+      const distanceKm = calculateTrackingDistance(lat, lng, currentCoords.lat, currentCoords.lng);
+      const coordsEl = document.getElementById('ambulance-coordinates');
+      const distanceEl = document.getElementById('ambulance-distance');
+      const speedEl = document.getElementById('ambulance-speed');
+      const updateEl = document.getElementById('ambulance-last-update');
+      const vehicleEl = document.getElementById('ambulance-id');
+      if (coordsEl) coordsEl.innerText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      if (distanceEl) distanceEl.innerText = distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m` : `${distanceKm.toFixed(2)} km`;
+      if (speedEl) speedEl.innerText = Number.isFinite(Number(data.speed)) ? `${Math.round(Number(data.speed))} km/h` : '—';
+      if (updateEl) updateEl.innerText = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+      if (vehicleEl && data.ambulanceId) vehicleEl.innerText = data.ambulanceId;
+
+      if (distanceKm < 0.05) {
+        setTrackingStatus('arrived', '✓ ARRIVED');
+        if (activeSOS && activeSOS.status === 'dispatched') activeSOS.status = 'on-scene';
+      }
+    }
+
+    function startAmbulanceSimulation() {
+      if (ambulanceSimulationTimer) clearInterval(ambulanceSimulationTimer);
+      initializeTrackingMap();
+
+      const start = { lat: currentCoords.lat + 0.0045, lng: currentCoords.lng + 0.0045 };
+      const end = { lat: currentCoords.lat, lng: currentCoords.lng };
+      let step = 0;
+      const totalSteps = 24;
+
+      updateAmbulanceTracking({ latitude: start.lat, longitude: start.lng, ambulanceId: 'Campus Response Ambulance #1 (ICU)', speed: 28, timestamp: Date.now() });
+
+      ambulanceSimulationTimer = setInterval(() => {
+        step++;
+        const t = step / totalSteps;
+        updateAmbulanceTracking({
+          latitude: start.lat + (end.lat - start.lat) * t,
+          longitude: start.lng + (end.lng - start.lng) * t,
+          ambulanceId: 'Campus Response Ambulance #1 (ICU)',
+          speed: step < totalSteps ? 28 : 0,
+          timestamp: Date.now(),
+          animationMs: 900
+        });
+        if (step >= totalSteps) {
+          clearInterval(ambulanceSimulationTimer);
+          ambulanceSimulationTimer = null;
+        }
+      }, 1000);
+    }
+
+    function stopAmbulanceTracking() {
+      if (ambulanceSimulationTimer) clearInterval(ambulanceSimulationTimer);
+      ambulanceSimulationTimer = null;
+      if (ambulanceAnimationFrame) cancelAnimationFrame(ambulanceAnimationFrame);
+      ambulanceAnimationFrame = null;
+      if (trackingSocket) { try { trackingSocket.close(); } catch (e) {} }
+      trackingSocket = null;
+    }
+
+    function connectAmbulanceWebSocket(incidentId) {
+      // Set window.CAMPUSCARE_WS_URL in production. Leave blank to use simulation.
+      const base = window.CAMPUSCARE_WS_URL;
+      if (!base || typeof WebSocket === 'undefined') return false;
+
+      try {
+        const url = `${base.replace(/\/$/, '')}/incidents/${encodeURIComponent(incidentId)}`;
+        trackingSocket = new WebSocket(url);
+        trackingSocket.onopen = () => setTrackingStatus('live');
+        trackingSocket.onmessage = (event) => {
+          try {
+            const packet = JSON.parse(event.data);
+            if (packet.type === 'ambulance_location' || packet.latitude != null) updateAmbulanceTracking(packet);
+          } catch (e) { console.warn('Invalid ambulance tracking packet', e); }
+        };
+        trackingSocket.onclose = () => setTrackingStatus('offline', '● RECONNECTING');
+        trackingSocket.onerror = () => setTrackingStatus('offline', '● CONNECTION ERROR');
+        return true;
+      } catch (e) {
+        console.warn('WebSocket unavailable; using local simulation.', e);
+        return false;
+      }
+    }
+
+    function beginAmbulanceTracking(incidentId) {
+      initializeTrackingMap();
+      stopAmbulanceTracking();
+      const connected = connectAmbulanceWebSocket(incidentId);
+      if (!connected) startAmbulanceSimulation();
+    }
+
+    // -----------------------------------------------------------------
+    // EMERGENCY SOS TRIGGER & STATUS TIMELINE
+    // -----------------------------------------------------------------
+    async function triggerSOS() {
+      const select = document.getElementById('select-campus-location');
+      const locId = select ? select.value : 'uni-health-centre';
+      const loc = locations.find(l => l.id === locId) || { id: locId, name: 'Campus Zone' };
+      const phone = document.getElementById('input-phone').value.trim();
+      const landmark = document.getElementById('input-landmark').value.trim();
+
+      playAlertSound();
+
+      const payload = {
+        locationId: loc.id,
+        latitude: currentCoords.lat,
+        longitude: currentCoords.lng,
+        accuracy: currentCoords.accuracy,
+        urgency: selectedUrgency,
+        symptom: selectedSymptom,
+        landmark: landmark || loc.landmark,
+        callbackPhone: phone
+      };
+
+      let incidentId = `SOS-${Math.floor(1000 + Math.random() * 9000)}`;
+      let incidentObj = null;
+
+      try {
+        const res = await fetch('/api/incidents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          incidentId = data.incident.id;
+          incidentObj = data.full || data.incident;
+        } else {
+          throw new Error();
+        }
+      } catch (err) {
+        // Standalone local simulation
+        incidentObj = {
+          id: incidentId,
+          publicToken: 'token-' + Math.random().toString(36).slice(2),
+          status: 'new',
+          locationId: loc.id,
+          locationName: loc.name,
+          locationLandmark: loc.landmark || '',
+          latitude: currentCoords.lat,
+          longitude: currentCoords.lng,
+          accuracy: currentCoords.accuracy,
+          symptom: selectedSymptom,
+          urgency: selectedUrgency,
+          landmark: landmark || loc.landmark,
+          callbackPhone: phone,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        incidents.unshift(incidentObj);
+        renderIncidents();
+      }
+
+      activeSOS = incidentObj || { id: incidentId, status: 'new' };
+
+      // Update Student Active Tracker Card
+      document.getElementById('tracker-id').innerText = incidentId;
+      document.getElementById('active-tracker-card').classList.remove('hidden');
+
+      // Update Step 1 & 2
+      document.getElementById('step-ack-status').innerText = 'Acknowledged';
+      document.getElementById('step-ack-status').className = 'text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-bold';
+      document.getElementById('step-ack-text').innerText = 'Hospital Chief Nurse & Trauma Desk alerted.';
+
+      showToast(`🚨 SOS Broadcasted! Coordinates (${currentCoords.lat}, ${currentCoords.lng}) sent to Hospital.`, "🚨");
+      await refreshIncidents();
+
+      // Automatically simulate staff acknowledgement & ambulance dispatch after 3.5 seconds
+      setTimeout(() => {
+        if (activeSOS && (activeSOS.status === 'new' || activeSOS.status === 'acknowledged')) {
+          activeSOS.status = 'dispatched';
+          activeSOS.vehicle = 'Campus Response Ambulance #1 (ICU)';
+          activeSOS.etaMinutes = 2;
+
+          const stepDispatch = document.getElementById('step-dispatch');
+          if (stepDispatch) {
+            stepDispatch.className = 'p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-500 space-y-1 transition-all duration-300';
+            document.getElementById('step-dispatch-badge').innerText = 'En Route';
+            document.getElementById('step-dispatch-badge').className = 'text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 px-1.5 py-0.5 rounded font-bold';
+            document.getElementById('step-dispatch-text').innerText = 'Ambulance #1 en route. Sirens active (ETA ~2 mins).';
+          }
+          playAlertSound();
+          showToast("Ambulance #1 dispatched to your location! Keep phone clear.", "🚑");
+          beginAmbulanceTracking(activeSOS.id);
+          refreshIncidents();
+        }
+      }, 3500);
+
+      // Step 4 is now activated by the ambulance reaching the SOS location,
+      // rather than by a fixed timer. The demo simulator reaches the location automatically.
+    }
+
+    // -----------------------------------------------------------------
+    // STEP 4: ON-SCENE CARE ACTIVATION & VITALS TELEMETRY
+    // -----------------------------------------------------------------
+    let vitalsTimer = null;
+
+    function activateOnSceneCare(id) {
+      const stepScene = document.getElementById('step-scene');
+      const badge = document.getElementById('step-scene-badge');
+      const title = document.getElementById('step-scene-title');
+      const text = document.getElementById('step-scene-text');
+      const detailPanel = document.getElementById('on-scene-detail-panel');
+
+      if (stepScene) {
+        stepScene.className = 'p-4 rounded-2xl bg-emerald-500/10 border-2 border-emerald-500 dark:border-emerald-400 space-y-1 shadow-lg ring-2 ring-emerald-500/30 transition-all duration-300';
+      }
+      if (badge) {
+        badge.innerText = '● ACTIVE NOW';
+        badge.className = 'text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-black animate-pulse';
+      }
+      if (title) {
+        title.innerHTML = '🏥 4. On-Scene Care <span class="text-xs text-emerald-600 font-bold">(ACTIVE)</span>';
+      }
+      if (text) {
+        text.innerText = 'Paramedic Unit 1 arrived at block. Triage & life-support active.';
+      }
+      if (detailPanel) {
+        detailPanel.classList.remove('hidden');
+      }
+
+      const inc = incidents.find(i => i.id === id);
+      if (inc) {
+        inc.status = 'on-scene';
+        try {
+          fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'on-scene' })
+          }).catch(() => {});
+        } catch(e) {}
+      }
+      if (activeSOS) {
+        activeSOS.status = 'on-scene';
+      }
+
+      startVitalsSimulator();
+      renderIncidents();
+      playAlertSound();
+      showToast("🏥 Paramedics on scene! Step 4: On-Scene Care activated.", "🏥");
+    }
+
+    function activateOnSceneCareManual() {
+      const targetId = activeSOS ? activeSOS.id : (incidents[0] ? incidents[0].id : 'SOS-1001');
+      activateOnSceneCare(targetId);
+    }
+
+    function completeIncidentTransfer() {
+      if (vitalsTimer) clearInterval(vitalsTimer);
+      if (activeSOS) {
+        resolveIncident(activeSOS.id);
+      } else if (incidents[0]) {
+        resolveIncident(incidents[0].id);
+      }
+      const detailPanel = document.getElementById('on-scene-detail-panel');
+      if (detailPanel) detailPanel.classList.add('hidden');
+      showToast("✓ Patient transfer completed! Incident archived to Health Centre Log.", "✅");
+    }
+
+    function startVitalsSimulator() {
+      if (vitalsTimer) clearInterval(vitalsTimer);
+      vitalsTimer = setInterval(() => {
+        const hrEl = document.getElementById('vitals-hr');
+        const spo2El = document.getElementById('vitals-spo2');
+        if (hrEl) {
+          const hr = 76 + Math.floor(Math.random() * 8);
+          hrEl.innerText = hr;
+        }
+        if (spo2El) {
+          const spo2 = 97 + Math.floor(Math.random() * 3);
+          spo2El.innerText = spo2;
+        }
+      }, 3000);
+    }
+
+    function cancelActiveSOS() {
+      if (confirm("Are you sure you want to cancel this emergency request?")) {
+        document.getElementById('active-tracker-card').classList.add('hidden');
+        const detailPanel = document.getElementById('on-scene-detail-panel');
+        if (detailPanel) detailPanel.classList.add('hidden');
+        if (vitalsTimer) clearInterval(vitalsTimer);
+        stopAmbulanceTracking();
+
+        if (activeSOS) {
+          incidents = incidents.filter(i => i.id !== activeSOS.id);
+          activeSOS = null;
+          renderIncidents();
+        }
+        showToast("SOS Alert has been cancelled.", "ℹ️");
+      }
+    }
+
+    function selectTriage(btn, symptom, urgency) {
+      selectedSymptom = symptom;
+      selectedUrgency = urgency;
+      document.querySelectorAll('.triage-chip').forEach(b => {
+        b.className = 'triage-chip p-3 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-rose-500 text-slate-800 dark:text-slate-200 font-semibold text-left transition flex flex-col justify-between';
+      });
+      btn.className = 'triage-chip p-3 rounded-2xl border-2 border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 font-bold text-left transition flex flex-col justify-between shadow-sm';
+      document.getElementById('current-urgency-badge').innerText = `${urgency.toUpperCase()} Priority`;
+      
+      // Auto-link with the Live Patient Care Guide
+      if (symptom.includes('Chest') || symptom.includes('Breath')) switchPatientGuide('chest-pain');
+      else if (symptom.includes('Fracture') || symptom.includes('Bleed') || symptom.includes('Trauma')) switchPatientGuide('trauma-bleeding');
+      else if (symptom.includes('Unconscious') || symptom.includes('Faint') || symptom.includes('Seizure')) switchPatientGuide('unconscious-seizure');
+      else if (symptom.includes('Allerg') || symptom.includes('Anaphylaxis')) switchPatientGuide('allergy-anaphylaxis');
+
+      showToast(`Triage selected: ${symptom} (${urgency})`, "🩺");
+    }
+
+    // -----------------------------------------------------------------
+    // LIVE ON-SCREEN PATIENT CARE INSTRUCTION DATABASE (8 PROBLEMS)
+    // -----------------------------------------------------------------
+    const patientCareGuides = {
+      'chest-pain': {
+        title: 'Chest Pain, Heart Attack & Respiratory Distress',
+        category: 'Cardiac & Pulmonary Critical Care',
+        urgency: 'CRITICAL (Immediate Life Threat)',
+        color: 'rose',
+        immediateAction: 'Sit the patient upright at a 45-degree angle. Loosen tight collar, buttons, and belt immediately. Keep their airway completely clear and calm them.',
+        steps: [
+          { title: 'Do Not Allow Movement', desc: 'Do NOT let the patient walk or climb stairs. Complete physical rest reduces cardiac oxygen demand.' },
+          { title: 'Prescribed Medication', desc: 'If the patient has prescribed Aspirin or Nitroglycerin and is fully conscious, assist them in taking it as directed.' },
+          { title: 'Monitor Breathing & Pulse', desc: 'Check every 30 seconds. If patient loses consciousness and stops normal breathing, begin Hands-Only CPR immediately.' },
+          { title: 'Maintain Fresh Airflow', desc: 'Clear crowds away. Open nearby windows or use a fan to maximize fresh oxygen supply.' }
+        ],
+        donts: [
+          'DO NOT give water, food, or hot beverages (choking hazard if patient loses consciousness).',
+          'DO NOT leave the patient unattended for any reason.',
+          'DO NOT wait to see if pain subsides — minutes count in heart events.'
+        ],
+        hasCPR: true
+      },
+      'trauma-bleeding': {
+        title: 'Severe Bleeding, Lacerations & Bone Fractures',
+        category: 'Trauma & Orthopedic Emergency',
+        urgency: 'CRITICAL / HIGH',
+        color: 'amber',
+        immediateAction: 'Apply firm, continuous direct pressure on the bleeding site with a clean cloth, sterile gauze, or clothing. Keep pressure for at least 5 minutes uninterrupted.',
+        steps: [
+          { title: 'Continuous Pressure', desc: 'Press firmly. If blood soaks through, add another pad directly on top — do NOT remove the first pad.' },
+          { title: 'Immobilize Fractures', desc: 'For deformed or suspected broken bones, keep limb in the exact position found. Support with rolled towels or jackets.' },
+          { title: 'Treat for Shock', desc: 'Lay patient flat on their back and elevate legs 10–12 inches if no head/spinal injury. Cover with jacket to prevent hypothermia.' },
+          { title: 'Clean Field', desc: 'Keep wound free from dust or student crowding while waiting for paramedics.' }
+        ],
+        donts: [
+          'DO NOT attempt to push protruding bones back under the skin.',
+          'DO NOT remove embedded foreign objects (glass, knife) — secure dressings around the object.',
+          'DO NOT apply a tight tourniquet unless trained and severe arterial spurting occurs.'
+        ],
+        hasCPR: false
+      },
+      'unconscious-seizure': {
+        title: 'Unconsciousness, Fainting & Seizures',
+        category: 'Neurological Emergency',
+        urgency: 'CRITICAL',
+        color: 'purple',
+        immediateAction: 'Check responsiveness and airway immediately. If patient is unconscious but breathing, place them in the RECOVERY POSITION (on their left side).',
+        steps: [
+          { title: 'Recovery Position Technique', desc: 'Roll patient onto their left side, bend upper knee to 90° for stability, tilt chin gently upward to keep tongue from blocking airway.' },
+          { title: 'During a Seizure / Fit', desc: 'Clear all hard, sharp furniture away. Protect their head by placing a folded sweater or pillow underneath.' },
+          { title: 'Time the Event', desc: 'Note the exact start and stop time of convulsions to report to hospital doctors upon arrival.' },
+          { title: 'Post-Seizure Care', desc: 'When shaking ceases, gently turn patient onto side to allow saliva/vomit to drain naturally.' }
+        ],
+        donts: [
+          'NEVER put any object, spoon, cloth, or fingers inside the patient’s mouth.',
+          'DO NOT restrain or forcibly hold down their seizing arms or legs.',
+          'DO NOT throw water on their face or shake them to wake them up.'
+        ],
+        hasCPR: false
+      },
+      'allergy-anaphylaxis': {
+        title: 'Severe Allergic Reaction (Anaphylaxis)',
+        category: 'Immunological Shock',
+        urgency: 'CRITICAL (Rapid Progression)',
+        color: 'indigo',
+        immediateAction: 'Check immediately if patient carries an Epinephrine Auto-Injector (EpiPen). Administer it into the outer mid-thigh without delay.',
+        steps: [
+          { title: 'Administer EpiPen', desc: 'Grasp unit, pull blue safety cap, push orange tip firmly against outer thigh at 90° angle until click, hold for 3 seconds, massage area.' },
+          { title: 'Positioning', desc: 'Keep patient lying flat with legs elevated. If breathing is labored, allow sitting up slightly.' },
+          { title: 'Remove Allergen', desc: 'If bee/wasp sting, scrape away stinger with fingernail or credit card. Do not squeeze venom sac.' },
+          { title: 'Second Dose Alert', desc: 'If symptoms do not improve after 5 minutes and medics are still traveling, a second auto-injector may be given if available.' }
+        ],
+        donts: [
+          'DO NOT allow the patient to stand or walk — sudden posture changes cause fatal blood pressure drops.',
+          'DO NOT rely on oral antihistamine pills for acute throat swelling or airway constriction.'
+        ],
+        hasCPR: false
+      },
+      'choking': {
+        title: 'Choking & Complete Airway Obstruction',
+        category: 'Acute Respiratory Blockage',
+        urgency: 'CRITICAL',
+        color: 'orange',
+        immediateAction: 'Ask "Are you choking?". If patient cannot speak, cough, or breathe, perform 5 Back Blows followed by 5 Abdominal Thrusts (Heimlich Maneuver).',
+        steps: [
+          { title: '5 Sharp Back Blows', desc: 'Lean patient forward, support chest with one hand, give 5 firm blows between shoulder blades with the heel of other hand.' },
+          { title: '5 Abdominal Thrusts (Heimlich)', desc: 'Stand behind, wrap arms around waist, place fist thumb-side in just above navel, grasp with other hand, thrust sharply inward & upward.' },
+          { title: 'Alternate Cycle', desc: 'Repeat cycle of 5 back blows and 5 abdominal thrusts until blockage clears or medical responders arrive.' },
+          { title: 'If Patient Collapses', desc: 'Carefully lower them to floor, call 112 immediately, and begin CPR chest compressions.' }
+        ],
+        donts: [
+          'DO NOT slap their back if they are able to cough forcefully on their own.',
+          'DO NOT perform blind finger sweeps in the mouth — you may push the obstruction deeper.'
+        ],
+        hasCPR: false
+      },
+      'heatstroke': {
+        title: 'Heat Stroke & Severe Campus Dehydration',
+        category: 'Thermal Hyperthermia',
+        urgency: 'HIGH',
+        color: 'yellow',
+        immediateAction: 'Move the patient immediately into an air-conditioned building (e.g. library, hostel mess) or deep shaded breezeway.',
+        steps: [
+          { title: 'Active Rapid Cooling', desc: 'Apply ice packs or cold, wet cloths to the neck, armpits, and groin where major blood vessels are near the skin.' },
+          { title: 'Air Circulation', desc: 'Loosen or remove restrictive clothing and fan the patient vigorously while misting with cool water.' },
+          { title: 'Hydration Guidelines', desc: 'Provide small sips of cool water or ORS ONLY if patient is alert and fully conscious.' },
+          { title: 'Positioning', desc: 'Elevate feet slightly to promote blood circulation to vital organs.' }
+        ],
+        donts: [
+          'DO NOT give liquids if patient is drowsy, confused, or vomiting (aspiration risk).',
+          'DO NOT use freezing ice baths which can cause shivering and drive core temperature higher.'
+        ],
+        hasCPR: false
+      },
+      'burns': {
+        title: 'Burns, Scalds & Chemistry Lab Acid Splashes',
+        category: 'Chemical & Thermal Trauma',
+        urgency: 'HIGH',
+        color: 'emerald',
+        immediateAction: 'For thermal burns: cool immediately under gentle running room-temperature tap water for 15–20 minutes. For chemical lab burns: use emergency eye-wash/shower station for 15+ minutes.',
+        steps: [
+          { title: 'Lab Chemical Splashes', desc: 'Immediately remove contaminated lab coats and clothes while under the shower. Flush skin continuously for at least 15 minutes.' },
+          { title: 'Dress Cleanly', desc: 'Cover the burned area loosely with sterile cling wrap or a clean, dry, non-fluffy cloth.' },
+          { title: 'Remove Tight Items', desc: 'Gently remove rings, watches, and bracelets before swelling begins.' },
+          { title: 'Prevent Shock', desc: 'Keep patient calm and seated in a clean environment.' }
+        ],
+        donts: [
+          'DO NOT apply ice, butter, cooking oil, toothpaste, or burn ointments to fresh wounds.',
+          'DO NOT break or puncture blisters.',
+          'DO NOT pull away clothing that is melted and stuck to burned skin.'
+        ],
+        hasCPR: false
+      },
+      'electric-shock': {
+        title: 'Electric Shock & High-Voltage Trauma',
+        category: 'Electrical Emergency',
+        urgency: 'CRITICAL',
+        color: 'cyan',
+        immediateAction: 'YOUR SAFETY FIRST: DO NOT touch the victim while they are still in contact with electrical current.',
+        steps: [
+          { title: 'Cut the Power', desc: 'Switch off the main circuit breaker or unplug appliance immediately.' },
+          { title: 'Separate Safely', desc: 'If switch cannot be reached, use a dry, non-conductive wooden broom or PVC pipe to push victim away from the live wire.' },
+          { title: 'Assess Breathing', desc: 'Once current is disconnected, immediately verify breathing and pulse. Begin CPR if absent.' },
+          { title: 'Treat Burn Points', desc: 'Check for entry and exit burn marks on hands and feet and cover loosely with clean cloths.' }
+        ],
+        donts: [
+          'DO NOT touch the victim with bare hands or wet items if the source is live.',
+          'DO NOT approach high-voltage downed campus lines — maintain at least 10 meters distance.'
+        ],
+        hasCPR: true
+      }
+    };
+
+    let activeCPRInterval = null;
+
+    function switchPatientGuide(key) {
+      const guide = patientCareGuides[key] || patientCareGuides['chest-pain'];
+
+      // Update Tab Pill Styles
+      document.querySelectorAll('.patient-guide-tab').forEach(tab => {
+        if (tab.dataset.condition === key) {
+          tab.className = 'patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white shadow-sm transition';
+        } else {
+          tab.className = 'patient-guide-tab px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition';
+        }
+      });
+
+      const container = document.getElementById('patient-guide-content');
+      if (!container) return;
+
+      container.innerHTML = `
+        <div class="p-5 lg:p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-5">
+          <!-- GUIDE HEADER -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 uppercase tracking-wide">
+                ${guide.urgency}
+              </span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white mt-1">${guide.title}</h4>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${guide.category}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <a href="tel:112" class="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow flex items-center gap-1.5 animate-pulse">
+                <span>🚨 Dial 112</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- CRITICAL FIRST 60 SECONDS CALLOUT -->
+          <div class="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-500/40 text-xs text-rose-900 dark:text-rose-200 space-y-1">
+            <span class="font-black flex items-center gap-1.5 text-rose-700 dark:text-rose-400 text-xs uppercase tracking-wide">
+              ⚡ CRITICAL FIRST 60 SECONDS ACTION:
+            </span>
+            <p class="text-xs font-semibold leading-relaxed">${guide.immediateAction}</p>
+          </div>
+
+          <!-- OPTIONAL INTERACTIVE CPR METRONOME -->
+          ${guide.hasCPR ? `
+            <div class="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+              <div class="flex items-center gap-3">
+                <div id="cpr-visual-heart" class="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black text-2xl shadow-lg transition-transform duration-100">
+                  ❤️
+                </div>
+                <div>
+                  <h5 class="font-black text-slate-900 dark:text-white text-sm">Interactive CPR Compressions Guide (110 BPM)</h5>
+                  <p class="text-slate-600 dark:text-slate-400 text-[11px]">Paced to the rhythm of 'Stayin Alive' — Push hard & fast in center of chest.</p>
+                </div>
+              </div>
+              <button onclick="toggleCPRMetronome()" id="btn-cpr-metronome" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition whitespace-nowrap">
+                ▶ Start 110 BPM CPR Rhythm
+              </button>
+            </div>
+          ` : ''}
+
+          <!-- STEP-BY-STEP ACTION PROTOCOL CARDS -->
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Step-by-Step Action Protocol:</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              ${guide.steps.map((s, idx) => `
+                <div class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
+                  <span class="w-5 h-5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-black text-[11px] inline-flex items-center justify-center mr-1">
+                    ${idx + 1}
+                  </span>
+                  <strong class="text-slate-900 dark:text-white font-bold">${s.title}</strong>
+                  <p class="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed mt-1">${s.desc}</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- WHAT NEVER TO DO CALLOUT -->
+          <div class="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+            <span class="font-black text-amber-700 dark:text-amber-400 flex items-center gap-1.5 uppercase tracking-wide">
+              ❌ CRITICAL WARNINGS — WHAT NOT TO DO:
+            </span>
+            <ul class="list-disc list-inside space-y-1 text-[11px]">
+              ${guide.donts.map(d => `<li>${d}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleCPRMetronome() {
+      const btn = document.getElementById('btn-cpr-metronome');
+      const heart = document.getElementById('cpr-visual-heart');
+
+      if (activeCPRInterval) {
+        clearInterval(activeCPRInterval);
+        activeCPRInterval = null;
+        if (btn) btn.innerText = '▶ Start 110 BPM CPR Rhythm';
+        if (heart) heart.style.transform = 'scale(1)';
+        showToast("CPR rhythm guide paused.", "⏸️");
+      } else {
+        if (btn) btn.innerText = '⏸ Pause CPR Metronome';
+        // 110 beats per minute = approx 545ms interval
+        activeCPRInterval = setInterval(() => {
+          if (heart) {
+            heart.style.transform = 'scale(1.25)';
+            setTimeout(() => { if (heart) heart.style.transform = 'scale(1)'; }, 140);
+          }
+          if (soundEnabled) {
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.frequency.value = 1000;
+              gain.gain.setValueAtTime(0.15, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.08);
+            } catch(e) {}
+          }
+        }, 545);
+        showToast("CPR Metronome started at 110 BPM rhythm.", "❤️");
+      }
+    }
+
+    function saveStudentCustomDetails() {
+      const room = document.getElementById('modal-input-room').value.trim();
+      const landmark = document.getElementById('modal-input-landmark').value.trim();
+      const combined = `${room}, ${landmark}`;
+      document.getElementById('input-landmark').value = combined;
+      document.getElementById('telemetry-landmark').innerText = combined;
+      closeModal('modal-custom-location');
+      showToast(`Location details updated: ${room}`, "📍");
+    }
+
+    // -----------------------------------------------------------------
+    // HOSPITAL DISPATCHER QUEUE & ACTIONS
+    // -----------------------------------------------------------------
+    async function refreshIncidents() {
+      try {
+        const res = await fetch('/api/incidents');
+        if (res.ok) {
+          const data = await res.json();
+          incidents = data.incidents;
+        }
+      } catch (err) {
+        // Keep current client incidents
+      }
+      renderIncidents();
+    }
+
+    function renderIncidents() {
+      const container = document.getElementById('incidents-container');
+      const badgeCount = document.getElementById('badge-active-count');
+      const statCount = document.getElementById('stat-active-incidents');
+      if (!container) return;
+
+      const activeList = incidents.filter(i => i.status !== 'resolved' && i.status !== 'cancelled');
+      if (badgeCount) badgeCount.innerText = activeList.length;
+      if (statCount) statCount.innerText = activeList.length;
+
+      container.innerHTML = '';
+
+      if (activeList.length === 0) {
+        container.innerHTML = `
+          <div class="p-12 text-center text-slate-400">
+            <span class="text-4xl block mb-2">✅</span>
+            <p class="font-bold text-slate-700 dark:text-slate-300">All emergency queues are clear.</p>
+            <p class="text-xs text-slate-500 mt-1">No pending student SOS requests on campus.</p>
+          </div>
+        `;
+        return;
+      }
+
+      activeList.forEach(inc => {
+        const isCritical = inc.urgency === 'critical';
+        const mapsUrl = `https://www.google.com/maps?q=${inc.latitude},${inc.longitude}`;
+
+        const card = document.createElement('div');
+        card.className = `p-5 lg:p-6 transition flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+          inc.id === activeSOS?.id ? 'bg-rose-50/70 dark:bg-rose-950/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+        }`;
+
+        card.innerHTML = `
+          <div class="space-y-2 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-xs font-black text-rose-600 dark:text-rose-400">${inc.id}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
+                isCritical ? 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300' : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+              }">${inc.urgency || 'HIGH'} PRIORITY</span>
+              <span class="text-[11px] text-slate-400">🕒 ${new Date(inc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                inc.status === 'on-scene' ? 'bg-emerald-600 text-white animate-pulse' : (inc.status === 'dispatched' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300')
+              }">Status: ${inc.status === 'on-scene' ? 'ON-SCENE CARE ACTIVE' : inc.status.toUpperCase()}</span>
+            </div>
+
+            <h4 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>📍 ${inc.locationName}</span>
+              ${inc.callbackPhone ? `<span class="text-xs font-mono font-normal text-slate-500">📞 ${inc.callbackPhone}</span>` : ''}
+            </h4>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300">
+              <p><span>Landmark/Room:</span> <strong class="text-slate-800 dark:text-slate-200">${inc.landmark || inc.locationLandmark || 'Main Lobby'}</strong></p>
+              <p><span>GPS Coordinate:</span> <strong class="font-mono text-emerald-600 dark:text-emerald-400">${inc.latitude}, ${inc.longitude}</strong> (±${inc.accuracy}m)</p>
+              <p class="col-span-full"><span>Symptom / Triage:</span> <strong class="text-rose-600 dark:text-rose-400">${inc.symptom}</strong></p>
+              ${inc.vehicle ? `<p class="col-span-full text-indigo-600 dark:text-indigo-400 font-semibold">🚑 Assigned: ${inc.vehicle} (ETA: ~${inc.etaMinutes || 3} min)</p>` : ''}
+            </div>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="flex flex-wrap lg:flex-col items-end gap-2 shrink-0">
+            <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+              <span>🗺️ Open in Google Maps</span>
+            </a>
+
+            ${inc.status === 'new' ? `
+              <button onclick="acknowledgeIncident('${inc.id}')" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow transition">
+                ✓ Acknowledge SOS
+              </button>
+            ` : ''}
+
+            ${inc.status === 'dispatched' ? `
+              <button onclick="activateOnSceneCare('${inc.id}')" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow transition flex items-center gap-1.5 animate-pulse">
+                <span>🏥 Paramedics Arrived (Start On-Scene Care)</span>
+              </button>
+            ` : ''}
+
+            ${['new', 'acknowledged'].includes(inc.status) ? `
+              <button onclick="openDispatchModal('${inc.id}')" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow transition flex items-center gap-1.5">
+                <span>🚑 Dispatch Response Team</span>
+              </button>
+            ` : ''}
+
+            <button onclick="resolveIncident('${inc.id}')" class="px-3.5 py-1.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 rounded-xl text-xs font-semibold transition">
+              ${inc.status === 'on-scene' ? 'Complete Transfer & Resolve ✓' : 'Mark Handled ✓'}
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    async function acknowledgeIncident(id) {
+      try {
+        await fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'acknowledge' })
+        });
+      } catch(e) {}
+      const inc = incidents.find(i => i.id === id);
+      if (inc) inc.status = 'acknowledged';
+      renderIncidents();
+      showToast(`Incident #${id} acknowledged by dispatcher.`, "✓");
+    }
+
+    function openDispatchModal(id) {
+      document.getElementById('dispatch-target-incident-id').value = id;
+      openModal('modal-dispatch');
+    }
+
+    async function confirmAmbulanceDispatch() {
+      const id = document.getElementById('dispatch-target-incident-id').value;
+      const vehicle = document.getElementById('dispatch-vehicle').value;
+      const eta = document.getElementById('dispatch-eta').value;
+      const note = document.getElementById('dispatch-note').value;
+
+      try {
+        await fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'dispatch',
+            vehicle: vehicle,
+            etaMinutes: eta,
+            note: note
+          })
+        });
+      } catch(e) {}
+
+      const inc = incidents.find(i => i.id === id);
+      if (inc) {
+        inc.status = 'dispatched';
+        inc.vehicle = vehicle;
+        inc.etaMinutes = Number(eta);
+        inc.dispatchNote = note;
+      }
+
+      closeModal('modal-dispatch');
+      renderIncidents();
+      playAlertSound();
+      showToast(`Ambulance dispatched to ${inc ? inc.locationName : 'incident'}! ETA: ${eta} min`, "🚑");
+    }
+
+    async function resolveIncident(id) {
+      try {
+        await fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resolve' })
+        });
+      } catch(e) {}
+
+      incidents = incidents.filter(i => i.id !== id);
+      if (activeSOS && activeSOS.id === id) {
+        activeSOS = null;
+        document.getElementById('active-tracker-card').classList.add('hidden');
+        const detailPanel = document.getElementById('on-scene-detail-panel');
+        if (detailPanel) detailPanel.classList.add('hidden');
+        if (vitalsTimer) clearInterval(vitalsTimer);
+      }
+      renderIncidents();
+      showToast(`Incident #${id} marked as handled and resolved.`, "✅");
+    }
+
+    function simulateIncomingSOS() {
+      const demoLocations = [
+        { name: "Boys Hostel 4 (BH-4)", room: "Room 402, 4th Floor" },
+        { name: "Central Library (Block 34)", room: "2nd Floor Silent Reading Area" },
+        { name: "Sports Complex", room: "Badminton Court 2" },
+        { name: "Girls Hostel 1 (GH-1)", room: "Room 108, Ground Floor" }
+      ];
+      const pick = demoLocations[Math.floor(Math.random() * demoLocations.length)];
+      const newInc = {
+        id: `SOS-${Math.floor(5000 + Math.random() * 4999)}`,
+        status: 'new',
+        locationName: pick.name,
+        locationLandmark: pick.room,
+        landmark: pick.room,
+        latitude: Number((31.2536 + (Math.random() * 0.002 - 0.001)).toFixed(6)),
+        longitude: Number((75.7037 + (Math.random() * 0.002 - 0.001)).toFixed(6)),
+        accuracy: 4,
+        symptom: "Sudden Severe Dizziness & High Fever",
+        urgency: "critical",
+        callbackPhone: "+91 99881-22334",
+        createdAt: new Date().toISOString()
+      };
+      incidents.unshift(newInc);
+      renderIncidents();
+      playAlertSound();
+      showToast(`NEW SOS ALERT: ${pick.name}!`, "🚨");
+    }
+
+    // -----------------------------------------------------------------
+    // QR POSTER GENERATOR & PRINT STUDIO
+    // -----------------------------------------------------------------
+    function getTargetSOSUrl(locId) {
+      const loc = locations.find(l => l.id === locId);
+      const inputBase = document.getElementById('qr-base-url')?.value?.trim();
+      const isWebPage = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+      const fallbackBase = isWebPage
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://YOUR-DOMAIN.example/CampusCare_SOS_Carto_Production_Ready.html';
+      const base = inputBase || fallbackBase;
+
+      // Always encode a website URL in the QR. Location data is carried in
+      // query parameters so scanning the code opens CampusCare first.
+      const params = new URLSearchParams();
+      params.set('location', locId);
+      if (loc && Number.isFinite(Number(loc.lat)) && Number.isFinite(Number(loc.lng))) {
+        params.set('lat', Number(loc.lat));
+        params.set('lng', Number(loc.lng));
+      }
+      if (loc?.landmark) params.set('landmark', loc.landmark);
+      return `${base}${base.includes('?') ? '&' : '?'}${params.toString()}`;
+    }
+
+    function filterQRCategory(cat) {
+      activeQRFilter = cat;
+      document.querySelectorAll('.qr-cat-btn').forEach(b => {
+        if (b.dataset.cat === cat) {
+          b.className = 'qr-cat-btn px-3 py-1 rounded-lg bg-rose-600 text-white font-semibold';
+        } else {
+          b.className = 'qr-cat-btn px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold';
+        }
+      });
+      renderQRCards();
+    }
+
+    function renderQRCards() {
+      const grid = document.getElementById('qr-posters-grid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      const filtered = locations.filter(l => activeQRFilter === 'all' || l.category === activeQRFilter);
+
+      filtered.forEach(loc => {
+        const dest = getTargetSOSUrl(loc.id);
+        const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&ecc=H&margin=8&data=${encodeURIComponent(dest)}`;
+
+        const card = document.createElement('article');
+        card.className = 'poster-card bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-900 dark:border-slate-700 shadow-md p-6 flex flex-col items-center text-center space-y-3';
+
+        card.innerHTML = `
+          <div class="w-full flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+            <span class="font-black text-rose-600 text-xs tracking-wider uppercase">CAMPUSCARE SOS</span>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">${loc.id}</span>
+          </div>
+
+          <h3 class="text-xl font-black text-slate-900 dark:text-white leading-tight mt-1">${loc.name}</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">${loc.landmark || 'Official LPU Emergency Location'}</p>
+
+          <div class="p-3 bg-white rounded-2xl border-2 border-slate-900 my-2 shadow-inner">
+            <img src="${qrImgUrl}" alt="QR code for ${loc.name}" class="w-44 h-44 rounded-lg block" loading="lazy" />
+          </div>
+
+          <div class="w-full bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-900 rounded-xl p-2.5 text-xs font-bold">
+            🚨 Medical Emergency? Scan QR → CampusCare opens → Allow GPS → Send SOS
+          </div>
+          <div class="w-full text-[10px] text-slate-400 font-mono break-all">${getTargetSOSUrl(loc.id)}</div>
+
+          <div class="w-full pt-1 flex items-center justify-between text-[10px] text-slate-500">
+            <span>Helpline: <strong class="text-rose-600">112</strong> / 01824-501227</span>
+            <span class="text-emerald-600 font-semibold">● Verified Entry</span>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function submitCustomLocation(e) {
+      e.preventDefault();
+      const name = document.getElementById('new-loc-name').value.trim();
+      const cat = document.getElementById('new-loc-cat').value;
+      const slug = document.getElementById('new-loc-slug').value.trim();
+      const landmark = document.getElementById('new-loc-landmark').value.trim();
+
+      locations.unshift({
+        id: slug,
+        name: name,
+        category: cat,
+        landmark: landmark,
+        verified: true
+      });
+
+      closeModal('modal-add-location');
+      populateLocationSelect();
+      renderQRCards();
+      showToast(`Location "${name}" added to registry & QR generated!`, "✅");
+    }
+
+    // -----------------------------------------------------------------
+    // DIGITAL OPD TOKEN GENERATOR
+    // -----------------------------------------------------------------
+    function generateNewOPDToken() {
+      const num = Math.floor(45 + Math.random() * 20);
+      document.getElementById('opd-user-token').innerText = `#MED-${num}`;
+      playAlertSound();
+      showToast(`Token #MED-${num} issued! Estimated consult time: 15 mins.`, "🎟️");
+    }
+
+    // -----------------------------------------------------------------
+    // HOST CONTROL CENTER — FLEET, DEPARTURES & BOOKINGS
+    // -----------------------------------------------------------------
+    const HOST_STORAGE_KEY = 'campuscare_host_data_v1';
+
+    let hostData = {
+      ambulances: [
+        {id:'AMB-001', number:'PB-08-CC-1001', type:'ICU Ambulance', driver:'Sandeep Kumar', phone:'+91 98765 10001', status:'available', assignment:'Standby — Health Centre'},
+        {id:'AMB-002', number:'PB-08-CC-1002', type:'Trauma Ambulance', driver:'Ravi Singh', phone:'+91 98765 10002', status:'available', assignment:'Standby — Gate 1'},
+        {id:'AMB-003', number:'PB-08-CC-1003', type:'Advanced Life Support', driver:'Amit Sharma', phone:'+91 98765 10003', status:'scheduled', assignment:'Booking BK-1002'},
+        {id:'AMB-004', number:'PB-08-CC-1004', type:'Basic Life Support', driver:'Manoj Kumar', phone:'+91 98765 10004', status:'maintenance', assignment:'Workshop'}
+      ],
+      departures: [
+        {id:'DEP-1001', bookingId:'BK-1001', ambulanceId:'AMB-001', customer:'Rahul Kumar', pickup:'Boys Hostel 4', destination:'LPU Health Centre', time:'10:30 AM', status:'scheduled'},
+        {id:'DEP-1002', bookingId:'BK-1002', ambulanceId:'AMB-003', customer:'Priya Singh', pickup:'Block 32', destination:'DMC Ludhiana', time:'12:15 PM', status:'scheduled'},
+        {id:'DEP-1003', bookingId:'BK-1003', ambulanceId:'AMB-002', customer:'Arjun Verma', pickup:'Girls Hostel 1', destination:'LPU Health Centre', time:'02:00 PM', status:'departed'}
+      ],
+      bookings: [
+        {id:'BK-1001', customer:'Rahul Kumar', phone:'+91 90000 10001', pickup:'Boys Hostel 4', destination:'LPU Health Centre', ambulanceId:'AMB-001', date:'Today', time:'10:30 AM', status:'confirmed', createdAt:'Today 09:42'},
+        {id:'BK-1002', customer:'Priya Singh', phone:'+91 90000 10002', pickup:'Block 32', destination:'DMC Ludhiana', ambulanceId:'AMB-003', date:'Today', time:'12:15 PM', status:'pending', createdAt:'Today 10:05'},
+        {id:'BK-1003', customer:'Arjun Verma', phone:'+91 90000 10003', pickup:'Girls Hostel 1', destination:'LPU Health Centre', ambulanceId:'AMB-002', date:'Today', time:'02:00 PM', status:'departed', createdAt:'Today 10:22'},
+        {id:'BK-1004', customer:'Neha Gupta', phone:'+91 90000 10004', pickup:'Central Library', destination:'LPU Health Centre', ambulanceId:'AMB-004', date:'Tomorrow', time:'09:00 AM', status:'completed', createdAt:'Yesterday 18:20'},
+        {id:'BK-1005', customer:'Vikash Kumar', phone:'+91 90000 10005', pickup:'Sports Complex', destination:'DMC Ludhiana', ambulanceId:'', date:'Tomorrow', time:'04:30 PM', status:'pending', createdAt:'Today 11:12'}
+      ]
+    };
+
+    function loadHostData() {
+      try {
+        const saved = localStorage.getItem(HOST_STORAGE_KEY);
+        if (saved) hostData = JSON.parse(saved);
+      } catch(e) {}
+    }
+
+    function saveHostData() {
+      try { localStorage.setItem(HOST_STORAGE_KEY, JSON.stringify(hostData)); } catch(e) {}
+    }
+
+    function hostStatusBadge(status) {
+      const map = {
+        available: ['Available','bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'],
+        scheduled: ['Scheduled','bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'],
+        departed: ['Departed','bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'],
+        maintenance: ['Maintenance','bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'],
+        pending: ['Pending','bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'],
+        confirmed: ['Confirmed','bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'],
+        completed: ['Completed','bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'],
+        cancelled: ['Cancelled','bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300']
+      };
+      const item = map[status] || [status, 'bg-slate-100 text-slate-700'];
+      return `<span class="px-2 py-1 rounded-full text-[10px] font-black uppercase ${item[1]}">${item[0]}</span>`;
+    }
+
+    function getAmbulanceName(id) {
+      const a = hostData.ambulances.find(x => x.id === id);
+      return a ? `${a.number} · ${a.type}` : 'Not assigned';
+    }
+
+    function renderHostDashboard() {
+      const fleetFilter = document.getElementById('host-fleet-filter')?.value || 'all';
+      const fleetSearch = (document.getElementById('host-fleet-search')?.value || '').toLowerCase();
+      const bookingFilter = document.getElementById('host-booking-filter')?.value || 'all';
+      const bookingSearch = (document.getElementById('host-booking-search')?.value || '').toLowerCase();
+
+      const fleet = hostData.ambulances.filter(a =>
+        (fleetFilter === 'all' || a.status === fleetFilter) &&
+        (`${a.number} ${a.driver} ${a.type}`.toLowerCase().includes(fleetSearch))
+      );
+
+      const bookings = hostData.bookings.filter(b =>
+        (bookingFilter === 'all' || b.status === bookingFilter) &&
+        (`${b.id} ${b.customer} ${b.pickup} ${b.destination}`.toLowerCase().includes(bookingSearch))
+      );
+
+      const todayDepartures = hostData.departures.filter(d => d.time && d.status !== 'completed').length;
+      const available = hostData.ambulances.filter(a => a.status === 'available').length;
+      const pending = hostData.bookings.filter(b => b.status === 'pending').length;
+
+      const set = (id, value) => { const el = document.getElementById(id); if (el) el.innerText = value; };
+      set('host-stat-fleet', hostData.ambulances.length);
+      set('host-stat-available', available);
+      set('host-stat-departures', todayDepartures);
+      set('host-stat-bookings', hostData.bookings.length);
+      set('host-stat-pending', pending);
+      set('badge-host-bookings', pending);
+
+      const fleetEl = document.getElementById('host-ambulance-list');
+      if (fleetEl) {
+        fleetEl.innerHTML = fleet.length ? fleet.map(a => `
+          <div class="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div class="flex items-start gap-3">
+              <div class="w-11 h-11 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xl">🚑</div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h4 class="font-black text-slate-900 dark:text-white">${a.number}</h4>
+                  ${hostStatusBadge(a.status)}
+                </div>
+                <p class="text-xs text-slate-500 mt-1">${a.type} · Driver: <strong>${a.driver}</strong> · ${a.phone || 'No contact'}</p>
+                <p class="text-[11px] text-slate-400 mt-1">Current assignment: ${a.assignment || 'None'}</p>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="setAmbulanceStatus('${a.id}','available')" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-xs font-bold">Available</button>
+              <button onclick="setAmbulanceStatus('${a.id}','maintenance')" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-bold">Maintenance</button>
+              <button onclick="openAmbulanceModal('${a.id}')" class="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 text-xs font-bold">Edit</button>
+            </div>
+          </div>`).join('') : `<div class="p-8 text-center text-xs text-slate-400">No ambulance records match this filter.</div>`;
+      }
+
+      const depEl = document.getElementById('host-departure-list');
+      if (depEl) {
+        depEl.innerHTML = hostData.departures.length ? hostData.departures.map(d => {
+          const next = d.status === 'scheduled' ? 'departed' : d.status === 'departed' ? 'completed' : null;
+          return `
+            <div class="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-mono font-black text-indigo-600 dark:text-indigo-400">${d.id}</span>
+                  ${hostStatusBadge(d.status)}
+                  <span class="text-[10px] text-slate-400">Booking ${d.bookingId}</span>
+                </div>
+                <p class="font-bold text-slate-900 dark:text-white mt-1">${d.customer} · ${getAmbulanceName(d.ambulanceId)}</p>
+                <p class="text-xs text-slate-500 mt-1">${d.pickup} → ${d.destination} · Departure ${d.time}</p>
+              </div>
+              <div class="flex gap-2">
+                ${next ? `<button onclick="advanceDeparture('${d.id}')" class="px-3.5 py-2 rounded-xl ${next==='departed'?'bg-indigo-600':'bg-emerald-600'} text-white text-xs font-black">${next==='departed'?'Mark Departed':'Complete Trip'}</button>` : '<span class="text-xs font-bold text-emerald-600">✓ Trip Completed</span>'}
+              </div>
+            </div>`;
+        }).join('') : `<div class="p-8 text-center text-xs text-slate-400">No departures scheduled.</div>`;
+      }
+
+      const table = document.getElementById('host-booking-table');
+      if (table) {
+        table.innerHTML = bookings.length ? bookings.map(b => `
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="p-4"><div class="font-mono font-black text-indigo-600 dark:text-indigo-400">${b.id}</div><div class="text-[10px] text-slate-400">${b.createdAt || ''}</div></td>
+            <td class="p-4"><div class="font-bold text-slate-900 dark:text-white">${b.customer}</div><div class="text-[10px] text-slate-400">${b.phone || ''}</div></td>
+            <td class="p-4"><div class="font-semibold">${b.pickup}</div><div class="text-[10px] text-slate-400">→ ${b.destination}</div></td>
+            <td class="p-4">${getAmbulanceName(b.ambulanceId)}</td>
+            <td class="p-4"><div class="font-bold">${b.date}</div><div class="text-[10px] text-slate-400">${b.time}</div></td>
+            <td class="p-4">${hostStatusBadge(b.status)}</td>
+            <td class="p-4 text-right">
+              <button onclick="advanceBooking('${b.id}')" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-950 text-slate-700 dark:text-slate-200 text-xs font-bold">
+                ${b.status==='pending'?'Confirm':b.status==='confirmed'?'Mark Departed':b.status==='departed'?'Complete':'View'}
+              </button>
+            </td>
+          </tr>`).join('') : `<tr><td colspan="7" class="p-8 text-center text-xs text-slate-400">No bookings match this filter.</td></tr>`;
+      }
+    }
+
+    function setAmbulanceStatus(id, status) {
+      const a = hostData.ambulances.find(x => x.id === id);
+      if (!a) return;
+      a.status = status;
+      a.assignment = status === 'maintenance' ? 'Workshop' : status === 'available' ? 'Standby' : a.assignment;
+      saveHostData();
+      renderHostDashboard();
+      showToast(`${a.number} marked ${status}.`, status === 'available' ? '✓' : '🚑');
+    }
+
+    function openAmbulanceModal(id='') {
+      const a = hostData.ambulances.find(x => x.id === id);
+      document.getElementById('host-ambulance-modal-title').innerText = a ? 'Edit Ambulance' : 'Add Ambulance';
+      document.getElementById('host-amb-id').value = a?.id || '';
+      document.getElementById('host-amb-number').value = a?.number || '';
+      document.getElementById('host-amb-type').value = a?.type || 'Basic Life Support';
+      document.getElementById('host-amb-driver').value = a?.driver || '';
+      document.getElementById('host-amb-phone').value = a?.phone || '';
+      document.getElementById('host-amb-status').value = a?.status || 'available';
+      openModal('modal-host-ambulance');
+    }
+
+    function saveHostAmbulance(e) {
+      e.preventDefault();
+      const id = document.getElementById('host-amb-id').value || `AMB-${String(hostData.ambulances.length + 1).padStart(3,'0')}`;
+      const existing = hostData.ambulances.find(x => x.id === id);
+      const record = {
+        id,
+        number: document.getElementById('host-amb-number').value.trim(),
+        type: document.getElementById('host-amb-type').value,
+        driver: document.getElementById('host-amb-driver').value.trim(),
+        phone: document.getElementById('host-amb-phone').value.trim(),
+        status: document.getElementById('host-amb-status').value,
+        assignment: existing?.assignment || 'Standby'
+      };
+      if (existing) Object.assign(existing, record);
+      else hostData.ambulances.push(record);
+      saveHostData();
+      closeModal('modal-host-ambulance');
+      renderHostDashboard();
+      showToast(`${record.number} saved to ambulance registry.`, '🚑');
+    }
+
+    function advanceDeparture(id) {
+      const d = hostData.departures.find(x => x.id === id);
+      if (!d) return;
+      if (d.status === 'scheduled') {
+        d.status = 'departed';
+        const a = hostData.ambulances.find(x => x.id === d.ambulanceId);
+        if (a) { a.status = 'departed'; a.assignment = `Booking ${d.bookingId}`; }
+        const b = hostData.bookings.find(x => x.id === d.bookingId);
+        if (b) b.status = 'departed';
+        showToast(`${d.ambulanceId} marked departed.`, '🚑');
+      } else if (d.status === 'departed') {
+        d.status = 'completed';
+        const a = hostData.ambulances.find(x => x.id === d.ambulanceId);
+        if (a) { a.status = 'available'; a.assignment = 'Standby'; }
+        const b = hostData.bookings.find(x => x.id === d.bookingId);
+        if (b) b.status = 'completed';
+        showToast(`Departure ${d.id} completed.`, '✓');
+      }
+      saveHostData();
+      renderHostDashboard();
+    }
+
+    function advanceBooking(id) {
+      const b = hostData.bookings.find(x => x.id === id);
+      if (!b) return;
+      if (b.status === 'pending') b.status = 'confirmed';
+      else if (b.status === 'confirmed') b.status = 'departed';
+      else if (b.status === 'departed') b.status = 'completed';
+      saveHostData();
+      renderHostDashboard();
+      showToast(`${b.id} status updated to ${b.status}.`, '✓');
+    }
+
+    function addHostDeparture() {
+      const pending = hostData.bookings.find(b => b.status === 'pending' || b.status === 'confirmed');
+      const available = hostData.ambulances.find(a => a.status === 'available');
+      if (!pending || !available) {
+        showToast('Need a pending/confirmed booking and an available ambulance.', '⚠️');
+        return;
+      }
+      pending.status = 'confirmed';
+      pending.ambulanceId = available.id;
+      available.status = 'scheduled';
+      available.assignment = `Booking ${pending.id}`;
+      const dep = {
+        id: `DEP-${Math.floor(1000 + Math.random()*8999)}`,
+        bookingId: pending.id, ambulanceId: available.id, customer: pending.customer,
+        pickup: pending.pickup, destination: pending.destination, time: pending.time, status: 'scheduled'
+      };
+      hostData.departures.unshift(dep);
+      saveHostData();
+      renderHostDashboard();
+      showToast(`Departure ${dep.id} scheduled for ${pending.customer}.`, '🕒');
+    }
+
+    function seedHostDemoData(force=false) {
+      if (force) {
+        localStorage.removeItem(HOST_STORAGE_KEY);
+        hostData = {
+          ambulances: [
+            {id:'AMB-001', number:'PB-08-CC-1001', type:'ICU Ambulance', driver:'Sandeep Kumar', phone:'+91 98765 10001', status:'available', assignment:'Standby — Health Centre'},
+            {id:'AMB-002', number:'PB-08-CC-1002', type:'Trauma Ambulance', driver:'Ravi Singh', phone:'+91 98765 10002', status:'available', assignment:'Standby — Gate 1'},
+            {id:'AMB-003', number:'PB-08-CC-1003', type:'Advanced Life Support', driver:'Amit Sharma', phone:'+91 98765 10003', status:'scheduled', assignment:'Booking BK-1002'},
+            {id:'AMB-004', number:'PB-08-CC-1004', type:'Basic Life Support', driver:'Manoj Kumar', phone:'+91 98765 10004', status:'maintenance', assignment:'Workshop'}
+          ],
+          departures: [
+            {id:'DEP-1001', bookingId:'BK-1001', ambulanceId:'AMB-001', customer:'Rahul Kumar', pickup:'Boys Hostel 4', destination:'LPU Health Centre', time:'10:30 AM', status:'scheduled'},
+            {id:'DEP-1002', bookingId:'BK-1002', ambulanceId:'AMB-003', customer:'Priya Singh', pickup:'Block 32', destination:'DMC Ludhiana', time:'12:15 PM', status:'scheduled'},
+            {id:'DEP-1003', bookingId:'BK-1003', ambulanceId:'AMB-002', customer:'Arjun Verma', pickup:'Girls Hostel 1', destination:'LPU Health Centre', time:'02:00 PM', status:'departed'}
+          ],
+          bookings: [
+            {id:'BK-1001', customer:'Rahul Kumar', phone:'+91 90000 10001', pickup:'Boys Hostel 4', destination:'LPU Health Centre', ambulanceId:'AMB-001', date:'Today', time:'10:30 AM', status:'confirmed', createdAt:'Today 09:42'},
+            {id:'BK-1002', customer:'Priya Singh', phone:'+91 90000 10002', pickup:'Block 32', destination:'DMC Ludhiana', ambulanceId:'AMB-003', date:'Today', time:'12:15 PM', status:'pending', createdAt:'Today 10:05'},
+            {id:'BK-1003', customer:'Arjun Verma', phone:'+91 90000 10003', pickup:'Girls Hostel 1', destination:'LPU Health Centre', ambulanceId:'AMB-002', date:'Today', time:'02:00 PM', status:'departed', createdAt:'Today 10:22'},
+            {id:'BK-1004', customer:'Neha Gupta', phone:'+91 90000 10004', pickup:'Central Library', destination:'LPU Health Centre', ambulanceId:'AMB-004', date:'Tomorrow', time:'09:00 AM', status:'completed', createdAt:'Yesterday 18:20'},
+            {id:'BK-1005', customer:'Vikash Kumar', phone:'+91 90000 10005', pickup:'Sports Complex', destination:'DMC Ludhiana', ambulanceId:'', date:'Tomorrow', time:'04:30 PM', status:'pending', createdAt:'Today 11:12'}
+          ]
+        };
+        saveHostData();
+        renderHostDashboard();
+        showToast('Host demo data refreshed.', '✓');
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // HOST AUTHENTICATION + TABS
+    // -----------------------------------------------------------------
+    const HOST_AUTH_KEY = 'campuscare_host_authenticated';
+    const HOST_DEMO_USER = 'hostadmin';
+    const HOST_DEMO_PASSWORD = 'Campus@2026!';
+
+    function isHostAuthenticated() {
+      try { return sessionStorage.getItem(HOST_AUTH_KEY) === 'true'; } catch(e) { return false; }
+    }
+
+    function requestHostAccess() {
+      if (isHostAuthenticated()) {
+        switchTab('host');
+        return;
+      }
+      const modal = document.getElementById('modal-host-login');
+      const error = document.getElementById('host-login-error');
+      if (error) error.classList.add('hidden');
+      if (modal) modal.classList.remove('hidden');
+      setTimeout(() => document.getElementById('host-login-user')?.focus(), 80);
+    }
+
+    function hostLogin(event) {
+      event.preventDefault();
+      const user = document.getElementById('host-login-user').value.trim();
+      const password = document.getElementById('host-login-password').value;
+      const error = document.getElementById('host-login-error');
+
+      if (user === HOST_DEMO_USER && password === HOST_DEMO_PASSWORD) {
+        try { sessionStorage.setItem(HOST_AUTH_KEY, 'true'); } catch(e) {}
+        document.getElementById('modal-host-login').classList.add('hidden');
+        document.getElementById('tab-btn-host').classList.remove('hidden');
+        switchTab('host');
+        showToast('Host authentication successful.', '✓');
+        document.getElementById('host-login-password').value = '';
+      } else {
+        error.classList.remove('hidden');
+        document.getElementById('host-login-password').value = '';
+        document.getElementById('host-login-password').focus();
+      }
+    }
+
+    function closeHostLogin() {
+      document.getElementById('modal-host-login')?.classList.add('hidden');
+    }
+
+    function hostLogout() {
+      try { sessionStorage.removeItem(HOST_AUTH_KEY); } catch(e) {}
+      document.getElementById('tab-btn-host')?.classList.add('hidden');
+      switchTab('student');
+      showToast('Host session ended.', '🔒');
+    }
+
+    function switchTab(tabId) {
+      if (tabId === 'host' && !isHostAuthenticated()) {
+        requestHostAccess();
+        return;
+      }
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+      const active = document.getElementById(`panel-${tabId}`);
+      if (active) active.classList.remove('hidden');
+
+      ['student', 'hospital', 'host', 'qr', 'opd', 'roadmap'].forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (!btn) return;
+        if (t === tabId) {
+          btn.className = 'px-3.5 py-1.5 rounded-xl transition bg-rose-600 text-white shadow-sm flex items-center gap-1.5';
+        } else {
+          btn.className = 'px-3.5 py-1.5 rounded-xl transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5';
+        }
+      });
+    }
+
+    function toggleDarkMode() {
+      document.documentElement.classList.toggle('dark');
+    }
+
+    function toggleAlertSound() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('audio-icon').innerText = soundEnabled ? '🔔' : '🔕';
+      document.getElementById('audio-text').innerText = soundEnabled ? 'Audio Alerts On' : 'Audio Muted';
+      showToast(`Emergency alert chime ${soundEnabled ? 'enabled' : 'muted'}`, "🔔");
+    }
+
+    function playAlertSound() {
+      if (!soundEnabled) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      } catch(e) {}
+    }
+
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    }
+
+    function showToast(msg, icon = "🚨") {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+      if (!toast) return;
+      toastMsg.innerText = msg;
+      toastIcon.innerText = icon;
+      toast.classList.remove('translate-y-24', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-24', 'opacity-0');
+      }, 4000);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.location.protocol === 'file:') {
+        const warning = document.getElementById('cc-file-protocol-warning');
+        if (warning) warning.style.display = 'block';
+      }
+      loadHostData(); initApp(); renderHostDashboard(); if (isHostAuthenticated()) document.getElementById('tab-btn-host')?.classList.remove('hidden');
+    });
+  </script>
+
+  <!-- FLOATING QUICK-DIAL EMERGENCY BUTTON (NO-PRINT) -->
+  <a href="tel:112" class="no-print fixed bottom-5 left-5 z-50 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white px-4 py-2.5 rounded-full shadow-2xl font-black text-xs flex items-center gap-2 border-2 border-white/50 animate-pulse hover:scale-105 transition" title="Dial 112 National Emergency Helpline">
+    <span class="text-base">🚨</span>
+    <span>Call Emergency: 112</span>
+  </a>
+
+</body>
+</html>

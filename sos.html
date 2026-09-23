@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>CampusCare SOS — Student Emergency Location Hand-off</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/sos.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/sos.html" aria-label="CampusCare SOS home">
+          <span class="brand-mark">+</span>
+          <span><span class="brand-name">CampusCare SOS</span><span class="brand-subtitle">LPU Emergency Healthcare Network</span></span>
+        </a>
+        <nav class="nav-links">
+          <a href="/index.html">Unified Portal</a>
+          <a href="/dashboard.html">Staff Dashboard</a>
+          <a href="/qr.html">QR Posters</a>
+        </nav>
+      </div>
+    </header>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">University Emergency Assistance</div>
+          <h1>Request Urgent Medical Help</h1>
+          <p>Your QR sticker identifies the campus zone. When you send an SOS, this page securely captures your phone’s high-precision GPS and instantly notifies the on-duty University Health Centre hospital dispatch desk.</p>
+        </div>
+        <div class="hero-aside">
+          <span class="eyebrow">Immediate Life Danger?</span>
+          <strong>Emergency Helpline 112</strong>
+          <a id="hero-phone" class="button button-danger" href="tel:112">Call 112 Emergency</a>
+          <span class="fine-print">Direct connection to emergency services. Campus Desk: 01824-501227</span>
+        </div>
+      </section>
+
+      <aside class="alert">
+        <strong>Important Emergency Protocol:</strong> If the patient is unconscious, not breathing, or in immediate life danger, call the 24/7 helpline immediately and request nearby security assistance.
+      </aside>
+
+      <!-- SOS REQUEST FORM CARD -->
+      <section id="sos-form-card" class="card">
+        <h2>Emergency SOS Request</h2>
+        <p class="subtext">The QR sticker marks your campus location; GPS provides the student's live coordinates and accuracy radius.</p>
+        
+        <div id="location-panel" class="location-panel">
+          <div class="location-icon">⌖</div>
+          <div>
+            <div id="location-name" class="location-name">Reading QR location…</div>
+            <div id="location-meta" class="location-meta">Checking the registered campus zone code.</div>
+          </div>
+        </div>
+
+        <form id="sos-form">
+          <div class="grid two-column">
+            <div>
+              <label for="landmark">Room, floor, or specific landmark <span class="hint">(optional but helpful)</span></label>
+              <input id="landmark" name="landmark" maxlength="160" autocomplete="off" placeholder="e.g. Room 318, 3rd Floor, near north stairs">
+            </div>
+            <div>
+              <label for="callback-phone">Student callback phone <span class="hint">(optional)</span></label>
+              <input id="callback-phone" name="callbackPhone" maxlength="32" autocomplete="tel" inputmode="tel" placeholder="Phone number responders can call">
+            </div>
+          </div>
+
+          <fieldset style="border: 0; padding: 0; margin-top: 18px;">
+            <legend style="font-weight: 800; font-size: 14px; margin-bottom: 8px;">What best describes the emergency?</legend>
+            <div class="triage">
+              <input id="triage-critical" type="radio" name="triage" value="critical" checked>
+              <label for="triage-critical">
+                <strong>Critical Priority</strong><br>
+                <span class="hint">Unconscious, chest pain, breathing difficulty, heavy trauma</span>
+              </label>
+
+              <input id="triage-high" type="radio" name="triage" value="high">
+              <label for="triage-high">
+                <strong>High Priority</strong><br>
+                <span class="hint">Severe injury, fracture, severe allergic reaction, deep wound</span>
+              </label>
+
+              <input id="triage-standard" type="radio" name="triage" value="standard">
+              <label for="triage-standard">
+                <strong>Medical Assistance</strong><br>
+                <span class="hint">Urgent but stable symptoms, high fever, sudden dizziness</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="gps-box">
+            <span>⌖</span>
+            <span id="gps-message">GPS has not been requested yet. Pressing Send SOS will request high-accuracy location permission.</span>
+          </div>
+
+          <div class="button-row">
+            <button id="send-sos" type="submit" class="button button-danger" style="font-size: 15px; padding: 14px 24px;" disabled>
+              🚨 Send SOS with GPS
+            </button>
+            <a id="form-phone" class="button button-plain" href="tel:112">
+              📞 Call 112 Emergency
+            </a>
+          </div>
+
+          <p class="fine-print" style="margin-top: 16px;">
+            By pressing Send SOS, you consent to transmitting your location coordinates solely for this emergency response. The service retains only essential incident records and purges closed entries after 24 hours.
+          </p>
+        </form>
+      </section>
+
+      <!-- LIVE STATUS CARD -->
+      <section id="status-card" class="card status-card hidden" data-status="new" aria-live="polite">
+        <div class="eyebrow">Emergency Broadcast Active</div>
+        <h2 id="status-heading">Your request is with the dispatch desk.</h2>
+        <p class="subtext">Incident Reference: <strong id="incident-id" class="incident-id"></strong></p>
+        
+        <p style="margin: 18px 0;">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-value" class="status-value">New</span>
+        </p>
+
+        <p id="status-message" class="subtext" style="font-size: 15px; color: var(--ink);">
+          Keep your phone nearby. Responding staff are reviewing your coordinates.
+        </p>
+
+        <div class="button-row" style="margin-top: 24px;">
+          <button id="cancel-sos" class="button button-plain button-small" type="button">
+            Cancel Mistaken Alert
+          </button>
+          <a id="status-phone" class="button button-danger button-small" href="tel:112">
+            Call Emergency 112
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      CampusCare SOS Reference Implementation — LPU University Health Centre Emergency Coordination Network.
+    </footer>
+  </body>
+</html>
