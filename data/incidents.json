@@ -1,0 +1,48 @@
+[
+  {
+    "id": "SOS-9042A1",
+    "publicToken": "token-sample-priya-sharma",
+    "status": "acknowledged",
+    "locationId": "girls-hostel-2",
+    "locationName": "Girls Hostel 2 (GH-2)",
+    "locationLandmark": "Adjacent to Canteen Area, Ground Floor Entrance",
+    "latitude": 31.2541,
+    "longitude": 75.7042,
+    "accuracy": 5,
+    "symptom": "Severe Asthma Attack & Respiratory Distress",
+    "urgency": "critical",
+    "landmark": "Room 204, 2nd Floor West Wing",
+    "callbackPhone": "+91 98112-33441",
+    "createdAt": "2026-09-12T00:10:00.000Z",
+    "updatedAt": "2026-09-12T00:12:00.000Z",
+    "dispatchNote": "Dr. Sandeep notified. Paramedic Crew 1 alerted.",
+    "audit": [
+      { "at": "2026-09-12T00:10:00.000Z", "action": "created", "actor": "student" },
+      { "at": "2026-09-12T00:12:00.000Z", "action": "acknowledge", "actor": "dispatcher" }
+    ]
+  },
+  {
+    "id": "SOS-9038B2",
+    "publicToken": "token-sample-aman-preet",
+    "status": "dispatched",
+    "locationId": "bh4-playground",
+    "locationName": "BH4 Playgrounds & Synthetic Track",
+    "locationLandmark": "Outdoor Athletic Field, Floodlight Mast 2",
+    "latitude": 31.2515,
+    "longitude": 75.7018,
+    "accuracy": 4,
+    "symptom": "Ankle Fracture & Inability to Walk",
+    "urgency": "high",
+    "landmark": "Near Football Goal Post B",
+    "callbackPhone": "+91 98774-12345",
+    "vehicle": "Campus Ambulance #2",
+    "etaMinutes": 3,
+    "dispatchNote": "Ambulance #2 en route with stretcher team.",
+    "createdAt": "2026-09-12T00:05:00.000Z",
+    "updatedAt": "2026-09-12T00:08:00.000Z",
+    "audit": [
+      { "at": "2026-09-12T00:05:00.000Z", "action": "created", "actor": "student" },
+      { "at": "2026-09-12T00:08:00.000Z", "action": "dispatch", "actor": "dispatcher" }
+    ]
+  }
+]

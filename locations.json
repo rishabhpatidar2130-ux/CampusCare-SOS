@@ -1,0 +1,191 @@
+[
+  {
+    "id": "uni-health-centre",
+    "name": "Uni Health Centre",
+    "category": "healthcare",
+    "landmark": "Near Main Administrative Block; 24/7 Emergency Medical Desk",
+    "verified": true
+  },
+  {
+    "id": "campus-medical-dispensary",
+    "name": "Campus Medical Dispensary",
+    "category": "healthcare",
+    "landmark": "Block 5, Ground Floor, Primary First-Aid Centre",
+    "verified": true
+  },
+  {
+    "id": "uni-mall",
+    "name": "Uni Mall",
+    "category": "amenity",
+    "landmark": "Ground & 1st Floor Commercial Zone, Central Corridor",
+    "verified": true
+  },
+  {
+    "id": "central-library",
+    "name": "Central Library (Block 34)",
+    "category": "academic",
+    "landmark": "Ground – 3rd Floor Study Zones, Security Desk",
+    "verified": true
+  },
+  {
+    "id": "sports-complex",
+    "name": "Indoor Sports Stadium",
+    "category": "sports",
+    "landmark": "Ground Floor, Sports Complex, First-Aid Station",
+    "verified": true
+  },
+  {
+    "id": "swimming-pool",
+    "name": "Swimming Pool & Aquatic Complex",
+    "category": "sports",
+    "landmark": "Adjacent to BH-4, Lifeguard Station",
+    "verified": true
+  },
+  {
+    "id": "bh4-playground",
+    "name": "BH4 Playgrounds & Synthetic Track",
+    "category": "sports",
+    "landmark": "Outdoor Athletic Field, Floodlight Mast 2",
+    "verified": true
+  },
+  {
+    "id": "block-30-admissions",
+    "name": "Block 30 — Division of Admissions",
+    "category": "academic",
+    "landmark": "Main Entrance Lobby & Helpdesk",
+    "verified": true
+  },
+  {
+    "id": "block-35-auditorium",
+    "name": "Block 35 — Shanti Devi Mittal Auditorium",
+    "category": "academic",
+    "landmark": "Auditorium Main Foyer, Left Gate Exit",
+    "verified": true
+  },
+  {
+    "id": "block-36-cs-department",
+    "name": "Block 36 — CS Department",
+    "category": "academic",
+    "landmark": "Computer Science & IT Labs, Floors 1–5",
+    "verified": true
+  },
+  {
+    "id": "ivy-creche-block-21a",
+    "name": "Ivy Creche — Block 21-A",
+    "category": "amenity",
+    "landmark": "Childcare Facility, Ground Floor Entry",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-1",
+    "name": "Boys Hostel 1 (BH-1)",
+    "category": "residential",
+    "landmark": "Warden Office, Ground Floor Foyer near Main Gate",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-2",
+    "name": "Boys Hostel 2 (BH-2)",
+    "category": "residential",
+    "landmark": "Adjacent to Mess Hall 2, Ground Floor Notice Board",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-3",
+    "name": "Boys Hostel 3 (BH-3)",
+    "category": "residential",
+    "landmark": "North Campus Wing, Main Corridor Lift Lobby",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-4",
+    "name": "Boys Hostel 4 (BH-4)",
+    "category": "residential",
+    "landmark": "Ground Floor Lift Lobby, Near Swimming Pool Entrance",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-5",
+    "name": "Boys Hostel 5 (BH-5)",
+    "category": "residential",
+    "landmark": "East Campus Wing, Warden Security Desk",
+    "verified": true
+  },
+  {
+    "id": "boys-hostel-6",
+    "name": "Boys Hostel 6 (BH-6)",
+    "category": "residential",
+    "landmark": "South Wing, Ground Floor Main Entry Gate",
+    "verified": true
+  },
+  {
+    "id": "girls-hostel-1",
+    "name": "Girls Hostel 1 (GH-1)",
+    "category": "residential",
+    "landmark": "Main Reception & Security Desk near Academic Block 36",
+    "verified": true
+  },
+  {
+    "id": "girls-hostel-2",
+    "name": "Girls Hostel 2 (GH-2)",
+    "category": "residential",
+    "landmark": "Adjacent to Canteen Area, Ground Floor Entrance",
+    "verified": true
+  },
+  {
+    "id": "girls-hostel-3",
+    "name": "Girls Hostel 3 (GH-3)",
+    "category": "residential",
+    "landmark": "South Campus Wing, Main Reception Checkpoint",
+    "verified": true
+  },
+  {
+    "id": "girls-hostel-4",
+    "name": "Girls Hostel 4 (GH-4)",
+    "category": "residential",
+    "landmark": "Newly Constructed Wing, Central Lobby & Lift Bay",
+    "verified": true
+  },
+  {
+    "id": "school-of-agriculture-labs",
+    "name": "School of Agriculture Labs",
+    "category": "laboratory",
+    "landmark": "Block 12 & 13, Ground Floor Chemical Storage Corridor",
+    "verified": true
+  },
+  {
+    "id": "chemistry-research-labs",
+    "name": "Chemistry Research Labs",
+    "category": "laboratory",
+    "landmark": "Block 28, 2nd Floor Emergency Eye-Wash Station",
+    "verified": true
+  },
+  {
+    "id": "campus-mess-hall-4",
+    "name": "Campus Mess Hall 4",
+    "category": "amenity",
+    "landmark": "Central Dining Block, Ground Floor Entry",
+    "verified": true
+  },
+  {
+    "id": "campus-gate-security-post",
+    "name": "Campus Gate Security Post",
+    "category": "security",
+    "landmark": "Main Entrance Gate & North Entry Checkpost",
+    "verified": true
+  },
+  {
+    "id": "rooftop-solar-garden",
+    "name": "Rooftop Solar Garden",
+    "category": "special-area",
+    "landmark": "Block 40, Terrace Level Access Stairwell",
+    "verified": true
+  },
+  {
+    "id": "night-canteen-street-food",
+    "name": "Night Canteen / Street Food",
+    "category": "amenity",
+    "landmark": "Outer Campus Road, East Gate Food Street",
+    "verified": true
+  }
+]

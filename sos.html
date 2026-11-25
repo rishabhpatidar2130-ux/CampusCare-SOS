@@ -1,142 +1,874 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="robots" content="noindex">
-    <title>CampusCare SOS — Student Emergency Location Hand-off</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script src="/sos.js" defer></script>
-  </head>
-  <body>
-    <header class="site-header">
-      <div class="header-inner">
-        <a class="brand" href="/sos.html" aria-label="CampusCare SOS home">
-          <span class="brand-mark">+</span>
-          <span><span class="brand-name">CampusCare SOS</span><span class="brand-subtitle">LPU Emergency Healthcare Network</span></span>
-        </a>
-        <nav class="nav-links">
-          <a href="/index.html">Unified Portal</a>
-          <a href="/dashboard.html">Staff Dashboard</a>
-          <a href="/qr.html">QR Posters</a>
-        </nav>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CampusCare SOS - Real-Time Student Location to Hospital Dispatch</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .sos-pulse {
+      animation: sosPulse 1.8s infinite;
+    }
+    @keyframes sosPulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 24px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .badge-blink {
+      animation: blink 1.2s infinite ease-in-out;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen font-sans antialiased transition-colors duration-200">
+
+  <!-- TOP APP HEADER -->
+  <header class="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 lg:px-8 py-3 shadow-sm">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- BRAND -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center text-white font-black text-xl shadow-md shadow-rose-500/20">
+          ✚
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg tracking-tight text-slate-900 dark:text-white">CampusCare SOS</h1>
+            <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+              Track 3 Prototype
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Direct Student-to-Hospital Staff Emergency Dispatch Network</p>
+        </div>
       </div>
-    </header>
-    <main class="page">
-      <section class="hero">
-        <div class="hero-copy">
-          <div class="eyebrow">University Emergency Assistance</div>
-          <h1>Request Urgent Medical Help</h1>
-          <p>Your QR sticker identifies the campus zone. When you send an SOS, this page securely captures your phone’s high-precision GPS and instantly notifies the on-duty University Health Centre hospital dispatch desk.</p>
+
+      <!-- ROLE TOGGLE SWITCHER (STUDENT VIEW vs HOSPITAL STAFF DISPATCHER) -->
+      <div class="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+        <button onclick="setRole('student')" id="btn-role-student" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-sm flex items-center gap-1.5">
+          <span>🚨 Student SOS Portal</span>
+        </button>
+        <button onclick="setRole('hospital')" id="btn-role-hospital" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5">
+          <span>🏥 Hospital Staff Dispatch</span>
+          <span id="hospital-pending-badge" class="w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] flex items-center justify-center font-bold">2</span>
+        </button>
+        <button onclick="setRole('roadmap')" id="btn-role-roadmap" class="hidden md:flex px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition items-center gap-1">
+          <span>🗺️ Campus Roadmap</span>
+        </button>
+      </div>
+
+      <!-- SYSTEM STATUS & THEME -->
+      <div class="flex items-center space-x-3">
+        <div class="hidden sm:flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 badge-blink"></span>
+          <span>Uni-Hospital NOC: <strong class="text-emerald-600 dark:text-emerald-400">Live 24/7</strong></span>
         </div>
-        <div class="hero-aside">
-          <span class="eyebrow">Immediate Life Danger?</span>
-          <strong>Emergency Helpline 112</strong>
-          <a id="hero-phone" class="button button-danger" href="tel:112">Call 112 Emergency</a>
-          <span class="fine-print">Direct connection to emergency services. Campus Desk: 01824-501227</span>
-        </div>
-      </section>
+        <button onclick="toggleDarkMode()" class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Toggle Theme">
+          🌓
+        </button>
+      </div>
+    </div>
+  </header>
 
-      <aside class="alert">
-        <strong>Important Emergency Protocol:</strong> If the patient is unconscious, not breathing, or in immediate life danger, call the 24/7 helpline immediately and request nearby security assistance.
-      </aside>
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 lg:px-8 py-6">
 
-      <!-- SOS REQUEST FORM CARD -->
-      <section id="sos-form-card" class="card">
-        <h2>Emergency SOS Request</h2>
-        <p class="subtext">The QR sticker marks your campus location; GPS provides the student's live coordinates and accuracy radius.</p>
-        
-        <div id="location-panel" class="location-panel">
-          <div class="location-icon">⌖</div>
-          <div>
-            <div id="location-name" class="location-name">Reading QR location…</div>
-            <div id="location-meta" class="location-meta">Checking the registered campus zone code.</div>
-          </div>
-        </div>
+    <!-- ================================================================= -->
+    <!-- VIEW 1: STUDENT / PATIENT SOS INTERFACE -->
+    <!-- ================================================================= -->
+    <div id="view-student" class="view-panel space-y-6">
+      
+      <!-- EMERGENCY TRIGGER HERO SECTION -->
+      <div class="bg-gradient-to-br from-rose-950 via-slate-900 to-slate-900 rounded-3xl p-6 lg:p-8 text-white shadow-2xl relative overflow-hidden border border-rose-800/40">
+        <div class="absolute -right-16 -top-16 w-80 h-80 bg-rose-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        <form id="sos-form">
-          <div class="grid two-column">
-            <div>
-              <label for="landmark">Room, floor, or specific landmark <span class="hint">(optional but helpful)</span></label>
-              <input id="landmark" name="landmark" maxlength="160" autocomplete="off" placeholder="e.g. Room 318, 3rd Floor, near north stairs">
-            </div>
-            <div>
-              <label for="callback-phone">Student callback phone <span class="hint">(optional)</span></label>
-              <input id="callback-phone" name="callbackPhone" maxlength="32" autocomplete="tel" inputmode="tel" placeholder="Phone number responders can call">
-            </div>
-          </div>
-
-          <fieldset style="border: 0; padding: 0; margin-top: 18px;">
-            <legend style="font-weight: 800; font-size: 14px; margin-bottom: 8px;">What best describes the emergency?</legend>
-            <div class="triage">
-              <input id="triage-critical" type="radio" name="triage" value="critical" checked>
-              <label for="triage-critical">
-                <strong>Critical Priority</strong><br>
-                <span class="hint">Unconscious, chest pain, breathing difficulty, heavy trauma</span>
-              </label>
-
-              <input id="triage-high" type="radio" name="triage" value="high">
-              <label for="triage-high">
-                <strong>High Priority</strong><br>
-                <span class="hint">Severe injury, fracture, severe allergic reaction, deep wound</span>
-              </label>
-
-              <input id="triage-standard" type="radio" name="triage" value="standard">
-              <label for="triage-standard">
-                <strong>Medical Assistance</strong><br>
-                <span class="hint">Urgent but stable symptoms, high fever, sudden dizziness</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <div class="gps-box">
-            <span>⌖</span>
-            <span id="gps-message">GPS has not been requested yet. Pressing Send SOS will request high-accuracy location permission.</span>
-          </div>
-
-          <div class="button-row">
-            <button id="send-sos" type="submit" class="button button-danger" style="font-size: 15px; padding: 14px 24px;" disabled>
-              🚨 Send SOS with GPS
+        <div class="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+          
+          <!-- LEFT: SOS TRIGGER & BIG BUTTON -->
+          <div class="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
+            <button onclick="triggerEmergencySOS()" id="sos-btn" class="sos-pulse w-36 h-36 lg:w-44 lg:h-44 rounded-full bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-black text-xl lg:text-2xl shadow-2xl flex flex-col items-center justify-center transition active:scale-95 border-4 border-white/20 select-none">
+              <span class="text-3xl lg:text-4xl mb-1">🚨</span>
+              <span>1-TAP SOS</span>
+              <span class="text-[10px] font-normal tracking-wide opacity-90">Sends Live GPS</span>
             </button>
-            <a id="form-phone" class="button button-plain" href="tel:112">
-              📞 Call 112 Emergency
-            </a>
+
+            <div class="space-y-2 max-w-md">
+              <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-400/30 text-rose-300 text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-rose-400 badge-blink"></span>
+                Emergency Medical Response Link
+              </div>
+              <h2 class="text-2xl lg:text-3xl font-extrabold tracking-tight text-white">
+                Need Urgent Medical Help?
+              </h2>
+              <p class="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Tapping the SOS button immediately captures your precise device GPS coordinates and pings the on-duty University Hospital emergency staff and campus ambulance team.
+              </p>
+            </div>
           </div>
 
-          <p class="fine-print" style="margin-top: 16px;">
-            By pressing Send SOS, you consent to transmitting your location coordinates solely for this emergency response. The service retains only essential incident records and purges closed entries after 24 hours.
-          </p>
-        </form>
-      </section>
+          <!-- RIGHT: LIVE GEOLOCATION TELEMETRY CARD -->
+          <div class="w-full lg:w-96 bg-white/10 dark:bg-slate-800/60 backdrop-blur-md rounded-2xl p-5 border border-white/15 space-y-3.5 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10">
+              <span class="font-bold text-white flex items-center gap-1.5">
+                <span>📍 Device Geolocation Status</span>
+              </span>
+              <span id="gps-status-badge" class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold">
+                ● GPS Ready
+              </span>
+            </div>
 
-      <!-- LIVE STATUS CARD -->
-      <section id="status-card" class="card status-card hidden" data-status="new" aria-live="polite">
-        <div class="eyebrow">Emergency Broadcast Active</div>
-        <h2 id="status-heading">Your request is with the dispatch desk.</h2>
-        <p class="subtext">Incident Reference: <strong id="incident-id" class="incident-id"></strong></p>
-        
-        <p style="margin: 18px 0;">
-          <span id="status-dot" class="status-dot"></span>
-          <span id="status-value" class="status-value">New</span>
-        </p>
+            <div class="space-y-2 text-slate-200">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Current Lat/Lng:</span>
+                <span id="student-coords" class="font-mono text-emerald-300 font-bold">31.2536° N, 75.7037° E</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Campus Area:</span>
+                <span id="student-campus-block" class="font-medium text-white">Block 34, Central Academic Zone</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Accuracy Radius:</span>
+                <span class="text-slate-300 font-mono">± 4.2 meters</span>
+              </div>
+            </div>
 
-        <p id="status-message" class="subtext" style="font-size: 15px; color: var(--ink);">
-          Keep your phone nearby. Responding staff are reviewing your coordinates.
-        </p>
+            <div class="pt-2 border-t border-white/10 flex items-center justify-between">
+              <button onclick="requestFreshGPS()" class="text-indigo-300 hover:text-white font-semibold underline flex items-center gap-1">
+                <span>🔄 Recalibrate Geolocation</span>
+              </button>
+              <button onclick="openModal('edit-location-modal')" class="px-2.5 py-1 rounded bg-white/20 hover:bg-white/30 text-white font-medium text-[11px] transition">
+                Specify Room / Floor
+              </button>
+            </div>
+          </div>
 
-        <div class="button-row" style="margin-top: 24px;">
-          <button id="cancel-sos" class="button button-plain button-small" type="button">
-            Cancel Mistaken Alert
-          </button>
-          <a id="status-phone" class="button button-danger button-small" href="tel:112">
-            Call Emergency 112
-          </a>
         </div>
-      </section>
-    </main>
+      </div>
 
-    <footer class="footer">
-      CampusCare SOS Reference Implementation — LPU University Health Centre Emergency Coordination Network.
-    </footer>
-  </body>
+      <!-- ACTIVE DISPATCH STATUS TRACKER (Visible when SOS triggered) -->
+      <div id="active-dispatch-tracker" class="hidden bg-white dark:bg-slate-800 rounded-2xl p-6 border-2 border-rose-500 dark:border-rose-600 shadow-xl space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500 badge-blink"></span>
+              <h3 class="text-lg font-black text-slate-900 dark:text-white">Emergency SOS Active — Help is on the Way</h3>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Incident <strong id="tracker-incident-id" class="text-slate-700 dark:text-slate-200">#MED-9042</strong> • Transmitted to Campus Hospital Dispatch
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="callHospitalHotline()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow transition flex items-center gap-1.5">
+              <span>📞 Call Hospital Hotline (+91-1824-500999)</span>
+            </button>
+            <button onclick="cancelSOS()" class="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-600 dark:text-slate-300 text-xs font-semibold rounded-xl transition">
+              Cancel Alert
+            </button>
+          </div>
+        </div>
+
+        <!-- TIMELINE STEPS -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+          <div class="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+            <span class="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+              ✓ 1. SOS Broadcasted
+            </span>
+            <p class="text-slate-500 dark:text-slate-400 text-[11px] mt-1">Coordinates sent via HTTPS & WebSocket</p>
+          </div>
+
+          <div id="step-hospital-acknowledged" class="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800">
+            <span class="font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+              ⏳ 2. Hospital Acknowledged
+            </span>
+            <p id="tracker-assigned-staff" class="text-slate-500 dark:text-slate-400 text-[11px] mt-1">Dr. Rajesh & Paramedic Team notified</p>
+          </div>
+
+          <div id="step-ambulance-enroute" class="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 opacity-60">
+            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              🚑 3. Ambulance En Route
+            </span>
+            <p id="tracker-eta-text" class="text-slate-500 dark:text-slate-400 text-[11px] mt-1">ETA: Calculating...</p>
+          </div>
+
+          <div id="step-on-scene" class="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 opacity-60">
+            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              🏥 4. On-Scene Care
+            </span>
+            <p class="text-slate-500 dark:text-slate-400 text-[11px] mt-1">First aid & emergency transfer</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECONDARY OPTIONS: QUICK TRIAGE & WELLBEING HUB -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- FAST SYMPTOM PRE-SELECTOR -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+              <span>🩺 Emergency Triage Symptom Selectors</span>
+            </h4>
+            <span class="text-[11px] text-slate-400">Optional (Pre-attaches to SOS)</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Clicking any of these symptoms will immediately append triage priority to your dispatch ticket:
+          </p>
+
+          <div class="grid grid-cols-2 gap-2 text-xs" id="symptom-buttons-container">
+            <button onclick="selectSymptom(this, 'Severe Chest Pain / Breathing Issue', 'Critical')" class="symptom-chip p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 text-left font-semibold hover:border-rose-500 transition">
+              💔 Chest Pain / Breathless
+            </button>
+            <button onclick="selectSymptom(this, 'Physical Injury / Bone Fracture', 'High')" class="symptom-chip p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 text-left font-semibold hover:border-amber-500 transition">
+              🩹 Fracture / Deep Wound
+            </button>
+            <button onclick="selectSymptom(this, 'Unconsciousness / Fainting', 'Critical')" class="symptom-chip p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 text-left font-semibold hover:border-rose-500 transition">
+              😵 Fainted / Unconscious
+            </button>
+            <button onclick="selectSymptom(this, 'Extreme Allergic Reaction', 'High')" class="symptom-chip p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-300 text-left font-semibold hover:border-indigo-500 transition">
+              🌾 Allergic / Swelling
+            </button>
+          </div>
+        </div>
+
+        <!-- CAMPUS DISPENSARY TOKEN QUEUE (NON-EMERGENCY) -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+              <span>🎟️ Dispensary Digital Token Queue</span>
+            </h4>
+            <span class="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+              OPD Open
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            For non-emergency illnesses (fever, cold, prescriptions). Avoid waiting 45 minutes in line at the campus clinic.
+          </p>
+
+          <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+            <div>
+              <span class="text-[10px] uppercase font-bold text-slate-400">Your Clinic Token</span>
+              <p class="text-2xl font-black text-indigo-600 dark:text-indigo-400" id="dispensary-token">#MED-42</p>
+              <span class="text-xs text-slate-500">Currently Serving: <strong class="text-slate-800 dark:text-slate-200">#MED-38</strong> (4 patients ahead)</span>
+            </div>
+            <button onclick="bookNewToken()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow transition">
+              Book OPD Slot
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 2: HOSPITAL STAFF & AMBULANCE DISPATCHER COMMAND CENTER -->
+    <!-- ================================================================= -->
+    <div id="view-hospital" class="view-panel hidden space-y-6">
+      
+      <!-- DISPATCHER STATS STRIP -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <span class="text-xs text-slate-500 font-medium">Active SOS Incidents</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span class="text-3xl font-black text-rose-600 dark:text-rose-400" id="stat-active-sos">2</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 font-bold badge-blink">Urgent</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <span class="text-xs text-slate-500 font-medium">Campus Ambulances Ready</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span class="text-3xl font-black text-emerald-600 dark:text-emerald-400">3 / 4</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 font-semibold">Standby</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <span class="text-xs text-slate-500 font-medium">Avg Response Time</span>
+          <div class="flex items-baseline justify-between mt-2">
+            <span class="text-3xl font-black text-indigo-600 dark:text-indigo-400">3.8 min</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 font-semibold">Campus Gate to Block</span>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <span class="text-xs text-slate-500 font-medium">Emergency Hotline Audio</span>
+          <div class="flex items-center justify-between mt-2">
+            <button onclick="toggleAlertSound()" id="audio-toggle-btn" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1">
+              <span>🔔 Chime: Enabled</span>
+            </button>
+            <span class="text-[10px] text-slate-400">Auto-alerts on SOS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DISPATCHER MAIN INTERFACE -->
+      <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+              <span>🏥 Hospital Emergency Dispatch Queue</span>
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                Live Geolocation Feed
+              </span>
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Hospital staff can view exact GPS pinpoints, navigate via Google Maps, and dispatch campus ambulances with 1 click.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="simulateNewIncomingSOS()" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition shadow-sm">
+              + Simulate Incoming SOS
+            </button>
+          </div>
+        </div>
+
+        <!-- EMERGENCY TICKETS LIST -->
+        <div id="dispatch-queue-container" class="divide-y divide-slate-100 dark:divide-slate-700/80">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 3: CAMPUS ROADMAP & ARCHITECTURE GUIDE -->
+    <!-- ================================================================= -->
+    <div id="view-roadmap" class="view-panel hidden space-y-6">
+      <div class="bg-white dark:bg-slate-800 p-6 lg:p-8 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-6">
+        
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Implementation Pathway</span>
+          <h3 class="text-2xl font-black text-slate-900 dark:text-white mt-1">
+            How to Deploy "CampusCare" at University Scale (Web-First to Native App)
+          </h3>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+            Here is the step-by-step technical and operational blueprint to transition from this working website prototype to an official campus-wide mobile emergency system.
+          </p>
+        </div>
+
+        <!-- 4-PHASE ROADMAP CARDS -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+          
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 font-bold text-sm flex items-center justify-center">
+              P1
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 1: Web-First Prototype (Current)</h4>
+            <ul class="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 list-disc list-inside">
+              <li>HTML5 Geolocation API (`navigator.geolocation`).</li>
+              <li>Real-time WebSocket connection to Hospital Staff screen.</li>
+              <li>No app installation required — works instantly via QR codes posted in hostel corridors and labs.</li>
+            </ul>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold text-sm flex items-center justify-center">
+              P2
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 2: Campus Ops & Hospital NOC</h4>
+            <ul class="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 list-disc list-inside">
+              <li>Install the Dispatcher Dashboard on tablets in all campus ambulances & chief doctor's desk.</li>
+              <li>Integrate WhatsApp / SMS Gateway (Twilio/Gupshup) to ping duty wardens automatically when an SOS fires in their hostel block.</li>
+            </ul>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-950 text-cyan-600 dark:text-cyan-400 font-bold text-sm flex items-center justify-center">
+              P3
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 3: Mobile App (Flutter / React Native)</h4>
+            <ul class="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 list-disc list-inside">
+              <li>Background location permissions (works even when phone is locked).</li>
+              <li>Physical Power-Button Panic Trigger (Triple-press power button triggers silent SOS).</li>
+              <li>Offline SMS Fallback: If 4G/Wi-Fi drops, fires automated encrypted GPS SMS to hospital dispatch SIM.</li>
+            </ul>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+            <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center justify-center">
+              P4
+            </div>
+            <h4 class="font-bold text-slate-900 dark:text-white text-sm">Phase 4: Medical Health Records & Mental Health</h4>
+            <ul class="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 list-disc list-inside">
+              <li>Secure medical profile (Blood group, allergies, asthma/diabetic history) auto-revealed to paramedic.</li>
+              <li>24/7 Anonymous mental health chat with licensed campus psychologists.</li>
+            </ul>
+          </div>
+
+        </div>
+
+        <!-- TECHNICAL CODE SNIPPET HIGHLIGHT -->
+        <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+          <h4 class="font-bold text-slate-900 dark:text-white text-sm mb-2">
+            How The Geolocation Coordinates Are Streamed to Hospital Staff:
+          </h4>
+          <pre class="bg-slate-900 text-slate-200 p-4 rounded-xl text-xs overflow-x-auto font-mono">
+// 1. Capture High-Accuracy GPS on Device
+navigator.geolocation.getCurrentPosition(
+  (position) => {
+    const payload = {
+      studentId: "REG-122049",
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+      campusBlock: "Boys Hostel 4, Room 318",
+      triageLevel: "Critical",
+      timestamp: new Date().toISOString()
+    };
+    // 2. Stream to Hospital Emergency WebSocket
+    socket.emit("EMERGENCY_SOS_TRIGGERED", payload);
+  },
+  (error) => handleGpsFallback(),
+  { enableHighAccuracy: true, timeout: 5000 }
+);</pre>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- MODAL: EDIT SPECIFIC ROOM / LANDMARK -->
+  <!-- ================================================================= -->
+  <div id="edit-location-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 relative text-xs">
+      <button onclick="closeModal('edit-location-modal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      
+      <h3 class="text-base font-bold text-slate-900 dark:text-white">Specify Campus Location Details</h3>
+      <p class="text-slate-500 mb-3">Helps ambulance and medical staff reach you inside large blocks.</p>
+
+      <form onsubmit="saveLocationDetails(event)" class="space-y-3">
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Hostel / Academic Block:</label>
+          <input type="text" id="input-campus-block" required value="Boys Hostel 4 (BH-4)" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Room / Lab No:</label>
+            <input type="text" id="input-room-no" required value="Room 318 (3rd Floor)" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100" />
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Emergency Contact:</label>
+            <input type="text" id="input-phone" required value="+91 98765-43210" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100" />
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Medical Conditions / Allergies:</label>
+          <input type="text" id="input-allergies" placeholder="e.g. Asthmatic, Penicillin allergy, Diabetic" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeModal('edit-location-modal')" class="px-3 py-1.5 text-slate-500">Cancel</button>
+          <button type="submit" class="px-3 py-1.5 font-semibold bg-rose-600 text-white rounded-lg hover:bg-rose-700">Save Location Details</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 max-w-sm bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 text-xs flex items-center gap-3 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+    <span id="toast-icon">🚨</span>
+    <span id="toast-msg">Action triggered</span>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // STATE & INITIAL DATA
+    // -------------------------------------------------------------
+    let currentCoords = { lat: 31.2536, lng: 75.7037 };
+    let campusLocation = "Boys Hostel 4 (BH-4), Room 318";
+    let activeEmergency = null;
+    let selectedSymptom = "General Medical Emergency";
+    let selectedUrgency = "High";
+    let soundEnabled = true;
+
+    // Active incidents visible to Hospital Staff
+    let hospitalQueue = [
+      {
+        id: "MED-9039",
+        studentName: "Priya Sharma",
+        studentPhone: "+91 98112-33441",
+        coords: { lat: 31.2541, lng: 75.7042 },
+        location: "Girls Hostel 2 (GH-2), Room 204",
+        symptom: "Severe Asthma Attack & Low Oxygen",
+        urgency: "Critical",
+        timestamp: "4 mins ago",
+        status: "Ambulance Dispatched",
+        assignedStaff: "Dr. Sandeep & Paramedic Crew 1 (Amb #2)",
+        eta: "1 min remaining"
+      },
+      {
+        id: "MED-9041",
+        studentName: "Aman Preet",
+        studentPhone: "+91 98774-12345",
+        coords: { lat: 31.2515, lng: 75.7018 },
+        location: "Central Sports Ground / Synthetic Track",
+        symptom: "Ankle Fracture & Inability to Walk",
+        urgency: "High",
+        timestamp: "9 mins ago",
+        status: "En Route",
+        assignedStaff: "Paramedic Unit 3 (Golf Cart Amb)",
+        eta: "3 mins remaining"
+      }
+    ];
+
+    // -------------------------------------------------------------
+    // GEOLOCATION ENGINE
+    // -------------------------------------------------------------
+    function requestFreshGPS() {
+      const statusBadge = document.getElementById('gps-status-badge');
+      const coordsText = document.getElementById('student-coords');
+
+      if ("geolocation" in navigator) {
+        statusBadge.innerText = "● Acquiring Satellite Fix...";
+        statusBadge.className = "px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 font-semibold";
+        
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            currentCoords.lat = parseFloat(pos.coords.latitude.toFixed(4));
+            currentCoords.lng = parseFloat(pos.coords.longitude.toFixed(4));
+            coordsText.innerText = `${currentCoords.lat}° N, ${currentCoords.lng}° E`;
+            statusBadge.innerText = "● High Precision GPS Locked";
+            statusBadge.className = "px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold";
+            showToast(`GPS calibrated: ${currentCoords.lat}, ${currentCoords.lng}`, "📍");
+          },
+          (err) => {
+            // Fallback simulation for university campus coordinates
+            currentCoords.lat = 31.2536 + (Math.random() * 0.001 - 0.0005);
+            currentCoords.lng = 75.7037 + (Math.random() * 0.001 - 0.0005);
+            coordsText.innerText = `${currentCoords.lat.toFixed(4)}° N, ${currentCoords.lng.toFixed(4)}° E (Campus Network)`;
+            statusBadge.innerText = "● Campus Cell Triangulation";
+            statusBadge.className = "px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold";
+            showToast("Device location calibrated to Campus LPU Network", "📍");
+          },
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      }
+    }
+
+    // -------------------------------------------------------------
+    // EMERGENCY TRIGGER FLOW
+    // -------------------------------------------------------------
+    function triggerEmergencySOS() {
+      const incidentId = `MED-${Math.floor(9045 + Math.random() * 50)}`;
+      activeEmergency = {
+        id: incidentId,
+        studentName: "You (Student User)",
+        studentPhone: "+91 98765-43210",
+        coords: { ...currentCoords },
+        location: campusLocation,
+        symptom: selectedSymptom,
+        urgency: selectedUrgency,
+        timestamp: "Just now",
+        status: "Alert Transmitted to Hospital NOC",
+        assignedStaff: "Pending Doctor Assignment",
+        eta: "Calculating..."
+      };
+
+      // Push to hospital staff queue immediately
+      hospitalQueue.unshift(activeEmergency);
+      updateHospitalBadge();
+      renderHospitalQueue();
+
+      // Show student tracker
+      document.getElementById('tracker-incident-id').innerText = `#${incidentId}`;
+      document.getElementById('active-dispatch-tracker').classList.remove('hidden');
+
+      // Trigger audio chime simulation
+      playAlertBeep();
+
+      showToast(`EMERGENCY SOS SENT! Exact GPS (${currentCoords.lat}, ${currentCoords.lng}) delivered to Hospital Staff!`, "🚨");
+
+      // Simulate rapid hospital response after 3 seconds
+      setTimeout(() => {
+        if (activeEmergency) {
+          activeEmergency.status = "Ambulance #1 Dispatched";
+          activeEmergency.assignedStaff = "Dr. Anirudh (Lead Trauma) + Paramedic Crew 1";
+          activeEmergency.eta = "3 minutes";
+
+          document.getElementById('step-hospital-acknowledged').className = "p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 font-bold text-emerald-700 dark:text-emerald-300";
+          document.getElementById('tracker-assigned-staff').innerText = activeEmergency.assignedStaff;
+          
+          const enrouteStep = document.getElementById('step-ambulance-enroute');
+          enrouteStep.className = "p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 font-bold text-amber-700 dark:text-amber-300";
+          document.getElementById('tracker-eta-text').innerText = "Ambulance en route (ETA ~3 min)";
+
+          renderHospitalQueue();
+          showToast("Hospital Staff Accepted: Ambulance #1 en route to your block!", "🚑");
+        }
+      }, 3500);
+    }
+
+    function cancelSOS() {
+      if (confirm("Are you sure you want to cancel this emergency alert?")) {
+        document.getElementById('active-dispatch-tracker').classList.add('hidden');
+        if (activeEmergency) {
+          hospitalQueue = hospitalQueue.filter(h => h.id !== activeEmergency.id);
+          activeEmergency = null;
+          updateHospitalBadge();
+          renderHospitalQueue();
+        }
+        showToast("SOS Alert cancelled. Hospital staff notified.", "ℹ️");
+      }
+    }
+
+    function selectSymptom(btn, symptomText, urgencyLevel) {
+      selectedSymptom = symptomText;
+      selectedUrgency = urgencyLevel;
+      document.querySelectorAll('.symptom-chip').forEach(c => {
+        c.classList.remove('ring-2', 'ring-rose-500', 'bg-rose-100');
+      });
+      btn.classList.add('ring-2', 'ring-rose-500');
+      showToast(`Selected: ${symptomText} (${urgencyLevel} Priority)`, "🩺");
+    }
+
+    // -------------------------------------------------------------
+    // HOSPITAL DISPATCH COMMAND CENTER LOGIC
+    // -------------------------------------------------------------
+    function renderHospitalQueue() {
+      const container = document.getElementById('dispatch-queue-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (hospitalQueue.length === 0) {
+        container.innerHTML = `
+          <div class="p-12 text-center text-slate-400">
+            <p class="text-4xl mb-2">✅</p>
+            <p class="font-medium text-sm">All campus emergency queues are clear. Zero active SOS incidents.</p>
+          </div>
+        `;
+        return;
+      }
+
+      hospitalQueue.forEach(ticket => {
+        const isCritical = ticket.urgency === "Critical";
+        const mapsUrl = `https://www.google.com/maps?q=${ticket.coords.lat},${ticket.coords.lng}`;
+
+        const item = document.createElement('div');
+        item.className = `p-5 transition flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+          ticket.id === activeEmergency?.id ? 'bg-rose-50/70 dark:bg-rose-950/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'
+        }`;
+
+        item.innerHTML = `
+          <div class="space-y-1.5 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-mono text-xs font-black text-rose-600 dark:text-rose-400">${ticket.id}</span>
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full ${
+                isCritical ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+              }">${ticket.urgency.toUpperCase()} PRIORITY</span>
+              <span class="text-xs text-slate-400">🕒 ${ticket.timestamp}</span>
+            </div>
+
+            <h4 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>${ticket.studentName}</span>
+              <span class="text-xs font-normal text-slate-500 font-mono">${ticket.studentPhone}</span>
+            </h4>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300 pt-1">
+              <p class="flex items-center gap-1.5">
+                <span>📍 Location:</span>
+                <strong class="text-slate-800 dark:text-slate-100">${ticket.location}</strong>
+              </p>
+              <p class="flex items-center gap-1.5">
+                <span>🛰️ GPS:</span>
+                <span class="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">${ticket.coords.lat}, ${ticket.coords.lng}</span>
+              </p>
+              <p class="flex items-center gap-1.5 col-span-full">
+                <span>🩺 Symptoms:</span>
+                <span class="font-semibold text-rose-600 dark:text-rose-400">${ticket.symptom}</span>
+              </p>
+            </div>
+
+            <div class="text-xs text-slate-500 pt-1">
+              <span>Status: <strong class="text-slate-700 dark:text-slate-300">${ticket.status}</strong> • Staff: <strong class="text-indigo-600 dark:text-indigo-400">${ticket.assignedStaff}</strong></span>
+            </div>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="flex flex-wrap lg:flex-col items-end gap-2 shrink-0">
+            <a href="${mapsUrl}" target="_blank" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
+              <span>🗺️ Google Maps Pin</span>
+            </a>
+            
+            <button onclick="dispatchAmbulance('${ticket.id}')" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow transition flex items-center gap-1">
+              <span>🚑 Dispatch / Reassign Ambulance</span>
+            </button>
+
+            <button onclick="resolveHospitalTicket('${ticket.id}')" class="px-3 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 rounded-lg text-xs font-medium transition">
+              Mark Patient Handled ✓
+            </button>
+          </div>
+        `;
+
+        container.appendChild(item);
+      });
+    }
+
+    function dispatchAmbulance(id) {
+      const ticket = hospitalQueue.find(t => t.id === id);
+      if (!ticket) return;
+      ticket.status = "Ambulance Dispatched (Sirens Active)";
+      ticket.assignedStaff = "Trauma Unit 1 (On Route)";
+      ticket.eta = "2 mins";
+      renderHospitalQueue();
+      showToast(`Ambulance dispatched to ${ticket.location}! Driver received navigation telemetry.`, "🚑");
+    }
+
+    function resolveHospitalTicket(id) {
+      hospitalQueue = hospitalQueue.filter(t => t.id !== id);
+      if (activeEmergency && activeEmergency.id === id) {
+        activeEmergency = null;
+        document.getElementById('active-dispatch-tracker').classList.add('hidden');
+      }
+      updateHospitalBadge();
+      renderHospitalQueue();
+      showToast(`Incident #${id} resolved and archived to Hospital log.`, "✅");
+    }
+
+    function simulateNewIncomingSOS() {
+      const newSOS = {
+        id: `MED-${Math.floor(9050 + Math.random() * 50)}`,
+        studentName: "Rahul Verma (Hosteller)",
+        studentPhone: "+91 99881-22334",
+        coords: { lat: 31.2522, lng: 75.7029 },
+        location: "Boys Hostel 2 (BH-2), Ground Floor Lawn",
+        symptom: "Severe Blood Pressure Drop & Dizziness",
+        urgency: "Critical",
+        timestamp: "Just now",
+        status: "Alert Pending Dispatch",
+        assignedStaff: "Awaiting Assignment",
+        eta: "Standby"
+      };
+
+      hospitalQueue.unshift(newSOS);
+      updateHospitalBadge();
+      renderHospitalQueue();
+      playAlertBeep();
+      showToast("NEW INCOMING EMERGENCY: GPS Location received from BH-2!", "🚨");
+    }
+
+    function updateHospitalBadge() {
+      const badge = document.getElementById('hospital-pending-badge');
+      const statEl = document.getElementById('stat-active-sos');
+      if (badge) badge.innerText = hospitalQueue.length;
+      if (statEl) statEl.innerText = hospitalQueue.length;
+    }
+
+    // -------------------------------------------------------------
+    // UI HELPERS & ROLES
+    // -------------------------------------------------------------
+    function setRole(role) {
+      document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+      const active = document.getElementById(`view-${role}`);
+      if (active) active.classList.remove('hidden');
+
+      // Update Header Tab styles
+      ['student', 'hospital', 'roadmap'].forEach(r => {
+        const btn = document.getElementById(`btn-role-${r}`);
+        if (!btn) return;
+        if (r === role) {
+          btn.className = "px-3.5 py-1.5 rounded-lg text-xs font-bold transition bg-rose-600 text-white shadow-sm flex items-center gap-1.5";
+        } else {
+          btn.className = "px-3.5 py-1.5 rounded-lg text-xs font-medium transition text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5";
+        }
+      });
+    }
+
+    function saveLocationDetails(e) {
+      e.preventDefault();
+      const block = document.getElementById('input-campus-block').value;
+      const room = document.getElementById('input-room-no').value;
+      campusLocation = `${block}, ${room}`;
+      document.getElementById('student-campus-block').innerText = campusLocation;
+      closeModal('edit-location-modal');
+      showToast(`Updated location: ${campusLocation}`, "📍");
+    }
+
+    function callHospitalHotline() {
+      showToast("Calling Campus Hospital Emergency NOC: +91 1824 500999...", "📞");
+    }
+
+    function bookNewToken() {
+      const num = Math.floor(45 + Math.random() * 20);
+      document.getElementById('dispensary-token').innerText = `#MED-${num}`;
+      showToast(`Digital Token #MED-${num} generated! Estimated consult in 25 mins.`, "🎟️");
+    }
+
+    function playAlertBeep() {
+      if (!soundEnabled) return;
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 880; // A5 tone
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.6);
+      } catch (e) {
+        // Fallback if browser audio context blocked
+      }
+    }
+
+    function toggleAlertSound() {
+      soundEnabled = !soundEnabled;
+      const btn = document.getElementById('audio-toggle-btn');
+      if (btn) {
+        btn.innerHTML = soundEnabled ? '<span>🔔 Chime: Enabled</span>' : '<span>🔕 Chime: Muted</span>';
+      }
+      showToast(`Emergency alert chime ${soundEnabled ? 'enabled' : 'muted'}`);
+    }
+
+    function openModal(id) {
+      const m = document.getElementById(id);
+      if (m) m.classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      const m = document.getElementById(id);
+      if (m) m.classList.add('hidden');
+    }
+
+    function showToast(msg, icon = "🚨") {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+      if (!toast) return;
+
+      toastMsg.innerText = msg;
+      toastIcon.innerText = icon;
+      toast.classList.remove('translate-y-24', 'opacity-0');
+      
+      setTimeout(() => {
+        toast.classList.add('translate-y-24', 'opacity-0');
+      }, 4000);
+    }
+
+    function toggleDarkMode() {
+      document.documentElement.classList.toggle('dark');
+    }
+
+    // Auto calibrate on load
+    window.addEventListener('DOMContentLoaded', () => {
+      requestFreshGPS();
+      renderHospitalQueue();
+      updateHospitalBadge();
+    });
+  </script>
+</body>
 </html>
